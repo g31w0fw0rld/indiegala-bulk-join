@@ -1,0 +1,1186 @@
+// ==UserScript==
+// @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
+// @namespace    http://tampermonkey.net/
+// @version      1.0.0
+// @description  Anade dos herramientas a Indiegala Giveaways: (1) compra masiva de boletos en giveaways "Extra Odds" (card y listado); (2) cola de "Single Ticket" desde el listado para entrar a varios giveaways de forma secuencial. Delays humanizados, control de aborto. ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
+// @match        https://www.indiegala.com/giveaways
+// @match        https://www.indiegala.com/giveaways/*
+// @author       g31w0fw0rld
+// @license      MIT
+// @downloadURL  https://github.com/g31w0fw0rld/indiegala-bulk-join/raw/main/indiegala-bulk-join.user.js
+// @updateURL    https://github.com/g31w0fw0rld/indiegala-bulk-join/raw/main/indiegala-bulk-join.user.js
+// @grant        unsafeWindow
+// @grant        GM_getValue
+// @grant        GM_setValue
+// ==/UserScript==
+
+// =====================================================================
+// ⚠️  ADVERTENCIA / WARNING  ⚠️
+// =====================================================================
+// Este script AUTOMATIZA acciones en Indiegala:
+//   1) Compra masiva de boletos en un solo giveaway "Extra Odds".
+//   2) Encolar varios "Single Ticket" desde el listado y dispararlos
+//      uno tras otro de forma secuencial ("scheduling").
+//
+// La politica oficial de Indiegala prohibe EXPLICITAMENTE cualquier
+// forma de automatizacion, incluso desde la misma cuenta, y reserva el
+// derecho de BANEAR PERMANENTEMENTE las cuentas que la violen.
+//
+//   Politica:  https://docs.indiegala.com/giveaways_auctions_trades/spam.html
+//   Cita:      "The use of any form of automation (including scheduling)
+//              to enter giveaways (...) even from the same account is not
+//              permitted. We reserve the right to permanently ban any
+//              account that violates those rules."
+//
+// "Encolar y ejecutar" entra textualmente en "scheduling". Los delays
+// humanizados, simular clicks o validar el estado del boton NO te
+// protegen: la regla es categorica y los clicks sinteticos llevan
+// event.isTrusted=false (detectable por el sitio).
+//
+// El autor no se hace responsable de baneos, perdida de saldo, o
+// cualquier consecuencia derivada del uso de este script.
+//
+// USA ESTE SCRIPT BAJO TU PROPIO RIESGO.
+// =====================================================================
+
+(function () {
+    'use strict';
+
+    const SCRIPT_VERSION = '1.0.0';
+    console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
+    console.warn(
+        '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
+        'La politica de Indiegala prohibe cualquier automatizacion (incluso desde la misma cuenta) y\n' +
+        'puede resultar en BAN PERMANENTE. Politica: https://docs.indiegala.com/giveaways_auctions_trades/spam.html\n' +
+        'Uso bajo tu propio riesgo.'
+    );
+
+    // =============================================
+    // INTERNACIONALIZACION (i18n)
+    // =============================================
+
+    const userLang = (navigator.language || 'en').split('-')[0];
+    const i18n = {
+        es: {
+            // Bulk join (Extra Odds)
+            bulkLabel: '⚠ Bulk JOIN',
+            bulkLabelTooltip: '⚠ Riesgo de ban — la política de Indiegala prohíbe la automatización. Uso bajo tu propio riesgo.',
+            bulkBadge: '⚠×{n}',
+            bulkBadgeTooltip: '⚠ Riesgo de ban — comprar varios boletos (Extra Odds) automáticamente VIOLA la política de Indiegala y puede banear tu cuenta. Máx {n} con tu saldo.',
+            modalTitle: 'Compra masiva de boletos',
+            modalGiveaway: 'Giveaway',
+            modalPrice: 'Precio por boleto',
+            modalBalance: 'Saldo GalaSilver',
+            modalMax: 'Máximo posible',
+            modalCount: 'Cantidad a comprar',
+            modalTotalCost: 'Costo total',
+            modalDelays: 'Espera entre boletos: 2.5–5 s · pausa larga 10–20 s cada 10',
+            modalConfirm: 'Iniciar',
+            modalCancel: 'Cancelar',
+            invalidCount: 'Cantidad inválida (1 a {max}).',
+            notEnough: 'No tienes GalaSilver suficiente para comprar al menos 1 boleto.',
+            // Cola (Single Ticket)
+            queueAddBtn: '＋',
+            queueAddBtnTooltip: '⚠ Riesgo de ban — añadir este giveaway a la cola para entrar automáticamente. Uso bajo tu propio riesgo.',
+            queueRemoveBtn: '✓',
+            queueRemoveBtnTooltip: 'En cola — clic para quitar',
+            queuePanelTitle: '⚠ Cola Single Ticket',
+            queueTotalCost: '{n} boletos · {cost} iS',
+            queueExecuteBtn: '▶ Ejecutar',
+            queueClearBtn: '🗑 Vaciar',
+            queueClearConfirm: '¿Vaciar toda la cola?',
+            queueExecuteConfirmTitle: '⚠️ Confirmar ejecución de cola',
+            queueLowBalance: 'Tu saldo ({balance} iS) es menor al costo total ({cost} iS). Algunos joins fallarán. ¿Continuar de todas formas?',
+            queueProgressItem: '{title} ({i}/{n})',
+            queueDone: 'Listo. {ok} de {n} entradas exitosas.',
+            queueModalCount: 'Boletos en cola',
+            // Compartido
+            warningTitle: '⚠️ RIESGO DE BAN PERMANENTE',
+            warningBody: 'La política de Indiegala prohíbe explícitamente cualquier forma de automatización para participar en giveaways, incluso desde la misma cuenta. Indiegala se reserva el derecho de banear permanentemente las cuentas que la violen. Usar este script bajo tu propio riesgo.',
+            warningPolicyLink: 'Ver política oficial →',
+            warningProgress: '⚠ Automatización en curso — riesgo de ban',
+            warningProgressQueue: '⚠ Cola con automatización — riesgo de ban',
+            balanceUnknown: 'No pude leer tu saldo de GalaSilver. Abre el menú de usuario una vez (clic en tu avatar) y vuelve a intentarlo.',
+            alreadyRunning: 'Ya hay una operación masiva en curso.',
+            progressTitle: 'Compra masiva en curso',
+            progressTitleQueue: 'Ejecutando cola',
+            progressStatus: 'Boleto {i} de {n}',
+            progressLongPause: 'Pausa larga…',
+            progressErrorDetected: 'Error detectado. Deteniendo.',
+            progressTriggerLost: 'No encuentro el botón JOIN. Deteniendo.',
+            progressBalanceLow: 'Saldo bajó por debajo del precio. Deteniendo.',
+            progressAborted: 'Detenido por el usuario.',
+            progressDone: 'Listo. {ok} boletos comprados.',
+            stopBtn: 'Detener',
+            closeBtn: 'Cerrar',
+        },
+        en: {
+            // Bulk join (Extra Odds)
+            bulkLabel: '⚠ Bulk JOIN',
+            bulkLabelTooltip: '⚠ Ban risk — Indiegala policy forbids automation. Use at your own risk.',
+            bulkBadge: '⚠×{n}',
+            bulkBadgeTooltip: '⚠ Ban risk — buying multiple tickets (Extra Odds) automatically VIOLATES Indiegala policy and may ban your account. Max {n} with your balance.',
+            modalTitle: 'Bulk ticket purchase',
+            modalGiveaway: 'Giveaway',
+            modalPrice: 'Price per ticket',
+            modalBalance: 'GalaSilver balance',
+            modalMax: 'Max possible',
+            modalCount: 'Tickets to buy',
+            modalTotalCost: 'Total cost',
+            modalDelays: 'Wait between tickets: 2.5–5 s · long pause 10–20 s every 10',
+            modalConfirm: 'Start',
+            modalCancel: 'Cancel',
+            invalidCount: 'Invalid amount (1 to {max}).',
+            notEnough: 'Not enough GalaSilver to buy at least 1 ticket.',
+            // Queue (Single Ticket)
+            queueAddBtn: '＋',
+            queueAddBtnTooltip: '⚠ Ban risk — add this giveaway to the queue for automatic entry. Use at your own risk.',
+            queueRemoveBtn: '✓',
+            queueRemoveBtnTooltip: 'In queue — click to remove',
+            queuePanelTitle: '⚠ Single Ticket Queue',
+            queueTotalCost: '{n} tickets · {cost} iS',
+            queueExecuteBtn: '▶ Execute',
+            queueClearBtn: '🗑 Clear',
+            queueClearConfirm: 'Clear the entire queue?',
+            queueExecuteConfirmTitle: '⚠️ Confirm queue execution',
+            queueLowBalance: 'Your balance ({balance} iS) is lower than total cost ({cost} iS). Some joins will fail. Continue anyway?',
+            queueProgressItem: '{title} ({i}/{n})',
+            queueDone: 'Done. {ok} of {n} entries successful.',
+            queueModalCount: 'Tickets queued',
+            // Shared
+            warningTitle: '⚠️ PERMANENT BAN RISK',
+            warningBody: 'Indiegala policy explicitly forbids any form of automation to enter giveaways, even from the same account. Indiegala reserves the right to permanently ban accounts that violate it. Use this script at your own risk.',
+            warningPolicyLink: 'See official policy →',
+            warningProgress: '⚠ Automation running — ban risk',
+            warningProgressQueue: '⚠ Automated queue running — ban risk',
+            balanceUnknown: 'Could not read your GalaSilver balance. Open the user menu once (click your avatar) and try again.',
+            alreadyRunning: 'A bulk operation is already running.',
+            progressTitle: 'Bulk purchase in progress',
+            progressTitleQueue: 'Executing queue',
+            progressStatus: 'Ticket {i} of {n}',
+            progressLongPause: 'Long pause…',
+            progressErrorDetected: 'Error detected. Stopping.',
+            progressTriggerLost: 'JOIN button not found. Stopping.',
+            progressBalanceLow: 'Balance dropped below price. Stopping.',
+            progressAborted: 'Stopped by user.',
+            progressDone: 'Done. {ok} tickets bought.',
+            stopBtn: 'Stop',
+            closeBtn: 'Close',
+        },
+    };
+    const T = i18n[userLang] || i18n.en;
+    const fmt = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? vars[k] : ''));
+
+    // =============================================
+    // CONFIG
+    // =============================================
+    const CFG = {
+        minDelayMs: 2500,
+        maxDelayMs: 5000,
+        longPauseEvery: 10,
+        longPauseMinMs: 10000,
+        longPauseMaxMs: 20000,
+    };
+
+    const STORAGE_KEY = 'ig-st-queue';
+    const BULK_BTN_CLASS = 'ig-bulk-join-btn';
+    const BULK_BADGE_CLASS = 'ig-bulk-join-badge';
+    const QBTN_CLASS = 'ig-q-btn';
+    const PANEL_ID = 'ig-q-panel';
+    const PROGRESS_OVERLAY_ID = 'ig-bulk-progress-overlay';
+    const MODAL_ID = 'ig-bulk-modal';
+
+    // =============================================
+    // ESTADO
+    // =============================================
+    let running = false;
+    let abortFlag = false;
+    let queue = loadQueue();
+
+    // Saldo GalaSilver en memoria. Se inicializa desde el DOM (HTML cargado) la primera
+    // vez que se consulta y se decrementa localmente tras cada join exitoso. Al recargar
+    // la pagina vuelve a leerse del DOM (las variables del modulo se reinician).
+    let currentBalance = null;
+
+    // =============================================
+    // STORAGE (persistencia de la cola)
+    // =============================================
+    function loadQueue() {
+        try {
+            if (typeof GM_getValue !== 'undefined') {
+                const v = GM_getValue(STORAGE_KEY, null);
+                if (Array.isArray(v)) return v;
+                if (typeof v === 'string') return JSON.parse(v) || [];
+            }
+            const raw = localStorage.getItem(STORAGE_KEY);
+            return raw ? JSON.parse(raw) : [];
+        } catch (e) {
+            console.error('[IG-BulkTools] loadQueue error:', e);
+            return [];
+        }
+    }
+    function saveQueue() {
+        try {
+            const json = JSON.stringify(queue);
+            if (typeof GM_setValue !== 'undefined') GM_setValue(STORAGE_KEY, json);
+            localStorage.setItem(STORAGE_KEY, json);
+        } catch (e) {
+            console.error('[IG-BulkTools] saveQueue error:', e);
+        }
+    }
+
+    // =============================================
+    // UTILIDADES
+    // =============================================
+    const rand = (min, max) => Math.floor(min + Math.random() * (max - min));
+    const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+    // Sleep que reacciona a abortFlag cada 100ms
+    async function abortableSleep(ms) {
+        const step = 100;
+        let elapsed = 0;
+        while (elapsed < ms) {
+            if (abortFlag) return;
+            await sleep(Math.min(step, ms - elapsed));
+            elapsed += step;
+        }
+    }
+
+    function makeFakeEvent() {
+        return {
+            preventDefault: () => {},
+            stopPropagation: () => {},
+            stopImmediatePropagation: () => {},
+            target: null,
+        };
+    }
+
+    function makeFakeAnchor() {
+        const a = document.createElement('a');
+        a.setAttribute('href', '#');
+        a.setAttribute('data-price', '');
+        return a;
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+    }
+
+    // Lee saldo GalaSilver del DOM (esta en el dropdown del usuario, con texto "GALASILVER" cerca del valor "N iS")
+    function getGalaSilver() {
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+            acceptNode: (n) => /galasilver/i.test(n.textContent) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+        });
+        let node;
+        while ((node = walker.nextNode())) {
+            let container = node.parentElement;
+            for (let i = 0; i < 4 && container; i++) {
+                const txt = container.textContent || '';
+                const m = txt.match(/galasilver[\s\S]{0,40}?(\d[\d,.]*)\s*iS/i);
+                if (m) {
+                    const num = parseInt(m[1].replace(/[,.]/g, ''), 10);
+                    if (!isNaN(num)) return num;
+                }
+                container = container.parentElement;
+            }
+        }
+        // Fallback global por si la estructura es distinta
+        const all = document.body.textContent || '';
+        const m = all.match(/galasilver[\s\S]{0,40}?(\d[\d,.]*)\s*iS/i);
+        if (m) {
+            const num = parseInt(m[1].replace(/[,.]/g, ''), 10);
+            if (!isNaN(num)) return num;
+        }
+        return null;
+    }
+
+    // Devuelve el saldo cacheado o lo inicializa desde el DOM la primera vez.
+    function getCurrentBalance() {
+        if (currentBalance == null) {
+            currentBalance = getGalaSilver();
+        }
+        return currentBalance;
+    }
+
+    // Decrementa el saldo cacheado tras un join exitoso y refresca los badges.
+    function consumeBalance(amount) {
+        if (currentBalance == null) {
+            currentBalance = getGalaSilver();
+        }
+        if (currentBalance != null) {
+            currentBalance = Math.max(0, currentBalance - (amount || 0));
+        }
+        refreshBulkBadges();
+    }
+
+    // Recalcula el "maximo posible" mostrado en cada badge de Extra Odds visible.
+    function refreshBulkBadges() {
+        const bal = currentBalance;
+        document.querySelectorAll('.' + BULK_BADGE_CLASS).forEach(badge => {
+            const price = parseInt(badge.dataset.price, 10);
+            if (isNaN(price) || price < 1) return;
+            const max = bal != null ? Math.floor(bal / price) : 0;
+            badge.textContent = fmt(T.bulkBadge, { n: max });
+            badge.title = fmt(T.bulkBadgeTooltip, { n: max });
+        });
+    }
+
+    // Parsea el atributo onclick para extraer gid, segundo argumento de la funcion
+    // (fnArg2) y token. Importante: en los Single Ticket el segundo argumento del
+    // onclick NO es el precio (siempre vale 0), es un flag de tipo. El precio real
+    // en iS hay que leerlo aparte de data-price (ver findDataPrice).
+    function parseJoinOnclick(anchor, fnName) {
+        const onclick = anchor && anchor.getAttribute && anchor.getAttribute('onclick');
+        if (!onclick) return null;
+        const re = new RegExp(fnName + '\\s*\\(\\s*this\\s*,\\s*event\\s*,\\s*\'([^\']+)\'\\s*,\\s*(\\d+)\\s*,\\s*\'([^\']+)\'\\s*\\)');
+        const m = onclick.match(re);
+        if (!m) return null;
+        const fnArg2 = parseInt(m[2], 10);
+        // params.price arranca con fnArg2 como fallback; cada sitio de inyeccion
+        // debe sobreescribirlo con el data-price real.
+        return { gid: m[1], price: fnArg2, fnArg2: fnArg2, token: m[3], fnName };
+    }
+
+    // Busca el data-price real del card (precio en iS).
+    function findDataPrice(scope) {
+        if (!scope) return null;
+        const sels = [
+            '.items-list-item-data-button a[data-price]',
+            '.card-join a[data-price]',
+            'a[data-price]',
+        ];
+        for (const sel of sels) {
+            const el = scope.querySelector(sel);
+            if (el) {
+                const v = parseInt(el.getAttribute('data-price'), 10);
+                if (!isNaN(v)) return v;
+            }
+        }
+        return null;
+    }
+
+    // Re-encuentra el trigger por gid (por si el DOM se actualiza tras cada join)
+    function findTrigger(params) {
+        if (params.fnName === 'joinGiveawayCard') {
+            return document.querySelector('.card-join a[data-price]');
+        }
+        const all = document.querySelectorAll('a.items-list-item-ticket-click');
+        for (const a of all) {
+            const onclick = a.getAttribute('onclick') || '';
+            if (onclick.indexOf("'" + params.gid + "'") !== -1) return a;
+        }
+        return null;
+    }
+
+    // Detecta si el card mostro un error (el sitio expone .card-error / .items-list-item-error)
+    function isErrorVisible(triggerEl) {
+        const candidates = [];
+        if (triggerEl) {
+            let p = triggerEl.parentElement;
+            for (let i = 0; i < 8 && p; i++) {
+                p.querySelectorAll && p.querySelectorAll('.card-error, .items-list-item-error').forEach(e => candidates.push(e));
+                p = p.parentElement;
+            }
+        }
+        if (!candidates.length) {
+            document.querySelectorAll('.card-error, .items-list-item-error').forEach(e => candidates.push(e));
+        }
+        for (const e of candidates) {
+            const cs = window.getComputedStyle(e);
+            if (cs.display !== 'none' && cs.visibility !== 'hidden' && (e.offsetWidth > 0 || e.offsetHeight > 0)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // =============================================
+    // PATH HELPERS
+    // =============================================
+    // Cola Single Ticket: solo en /giveaways (no en /giveaways/card/*)
+    function isListingRoot() {
+        return /^\/giveaways\/?$/.test(location.pathname);
+    }
+    function isCardDetail() {
+        return /^\/giveaways\/card\//.test(location.pathname);
+    }
+
+    // =============================================
+    // OPERACIONES DE COLA
+    // =============================================
+    function isInQueue(gid) { return queue.some(q => q.gid === gid); }
+    function addToQueue(item) {
+        if (isInQueue(item.gid)) return;
+        queue.push(item);
+        saveQueue();
+        renderQueuePanel();
+        refreshQueueButtonsState();
+    }
+    function removeFromQueue(gid) {
+        queue = queue.filter(q => q.gid !== gid);
+        saveQueue();
+        renderQueuePanel();
+        refreshQueueButtonsState();
+    }
+    function clearQueue() {
+        queue = [];
+        saveQueue();
+        renderQueuePanel();
+        refreshQueueButtonsState();
+    }
+
+    // =============================================
+    // ESTILOS
+    // =============================================
+    function injectStyles() {
+        if (document.getElementById('ig-bulk-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'ig-bulk-styles';
+        style.textContent = `
+            .${BULK_BTN_CLASS} {
+                display: block;
+                width: 100%;
+                margin-top: 8px;
+                padding: 10px 14px;
+                font-weight: bold;
+                color: #fff;
+                background: linear-gradient(90deg, #6a1b9a 0%, #ad1457 100%);
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+                text-align: center;
+                font-size: 14px;
+                letter-spacing: 0.5px;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+                transition: filter 0.15s;
+            }
+            .${BULK_BTN_CLASS}:hover { filter: brightness(1.15); }
+            .${BULK_BTN_CLASS}:disabled { opacity: 0.5; cursor: not-allowed; }
+
+            .${BULK_BADGE_CLASS} {
+                position: absolute;
+                top: 6px;
+                right: 6px;
+                z-index: 50;
+                padding: 4px 8px;
+                font-size: 11px;
+                font-weight: bold;
+                color: #fff;
+                background: linear-gradient(135deg, #6a1b9a 0%, #ad1457 100%);
+                border-radius: 12px;
+                cursor: pointer;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+                user-select: none;
+                line-height: 1;
+            }
+            .${BULK_BADGE_CLASS}:hover { filter: brightness(1.2); }
+
+            .${QBTN_CLASS} {
+                position: absolute;
+                top: 6px;
+                left: 6px;
+                z-index: 50;
+                width: 26px; height: 26px;
+                line-height: 24px;
+                text-align: center;
+                font-size: 14px; font-weight: bold;
+                color: #fff;
+                background: rgba(70, 70, 70, 0.85);
+                border: 2px solid rgba(255, 255, 255, 0.3);
+                border-radius: 50%;
+                cursor: pointer;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+                user-select: none;
+                transition: transform 0.1s, background 0.15s;
+            }
+            .${QBTN_CLASS}:hover { transform: scale(1.1); }
+            .${QBTN_CLASS}.ig-q-btn-active {
+                background: linear-gradient(135deg, #2e7d32 0%, #66bb6a 100%);
+                border-color: #fff;
+            }
+
+            #${PANEL_ID} {
+                position: fixed;
+                bottom: 20px; left: 20px;
+                width: 320px;
+                background: #1f1f1f; color: #fff;
+                border: 2px solid #d32f2f;
+                border-radius: 8px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+                font-family: sans-serif;
+                z-index: 99997;
+                max-height: 70vh;
+                display: flex; flex-direction: column;
+            }
+            #${PANEL_ID} .ig-q-warning-bar {
+                background: #4a1010;
+                border-left: 4px solid #ff5252;
+                padding: 8px 10px;
+                font-size: 11px; color: #ffb3b3;
+                line-height: 1.3;
+                border-radius: 6px 6px 0 0;
+            }
+            #${PANEL_ID} h4 {
+                margin: 0; padding: 10px 12px 6px;
+                font-size: 14px; color: #ff7da6;
+            }
+            #${PANEL_ID} .ig-q-summary {
+                padding: 0 12px 8px;
+                font-size: 12px; color: #ccc;
+            }
+            #${PANEL_ID} .ig-q-list {
+                list-style: none; margin: 0;
+                padding: 0 4px;
+                overflow-y: auto;
+                flex: 1;
+                max-height: 280px;
+            }
+            #${PANEL_ID} .ig-q-list li {
+                display: flex; align-items: center; gap: 6px;
+                padding: 6px 8px;
+                font-size: 12px;
+                border-bottom: 1px solid #333;
+            }
+            #${PANEL_ID} .ig-q-it-title {
+                flex: 1;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+                color: #fff;
+            }
+            #${PANEL_ID} .ig-q-it-price { color: #ff7da6; font-weight: bold; }
+            #${PANEL_ID} .ig-q-it-rem {
+                width: 22px; height: 22px;
+                border: none; border-radius: 50%;
+                background: #c62828; color: #fff;
+                cursor: pointer; font-weight: bold;
+                font-size: 12px; line-height: 1;
+            }
+            #${PANEL_ID} .ig-q-actions {
+                display: flex; gap: 6px;
+                padding: 10px 12px;
+                border-top: 1px solid #333;
+            }
+            #${PANEL_ID} .ig-q-actions button {
+                flex: 1;
+                padding: 8px;
+                border: none; border-radius: 4px;
+                font-size: 12px; font-weight: bold;
+                cursor: pointer;
+            }
+            #${PANEL_ID} #ig-q-clear { background: #555; color: #fff; }
+            #${PANEL_ID} #ig-q-exec {
+                color: #fff;
+                background: linear-gradient(90deg, #6a1b9a 0%, #ad1457 100%);
+            }
+            #${PANEL_ID} #ig-q-exec:disabled { opacity: 0.5; cursor: not-allowed; }
+
+            #${MODAL_ID}-backdrop {
+                position: fixed; inset: 0;
+                background: rgba(0,0,0,0.6);
+                z-index: 99998;
+                display: flex; align-items: center; justify-content: center;
+            }
+            #${MODAL_ID} {
+                background: #fff; color: #222;
+                border-radius: 8px;
+                padding: 20px 24px;
+                max-width: 460px; width: 90%;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+                font-family: sans-serif;
+            }
+            #${MODAL_ID} h3 { margin: 0 0 12px; font-size: 18px; color: #ad1457; }
+            #${MODAL_ID} .ig-warning {
+                background: #fff3cd;
+                border: 2px solid #d32f2f;
+                border-radius: 6px;
+                padding: 10px 12px;
+                margin: 0 0 14px;
+                color: #5a1010;
+                font-size: 12px;
+                line-height: 1.4;
+            }
+            #${MODAL_ID} .ig-warning b { color: #b71c1c; display: block; margin-bottom: 4px; font-size: 13px; }
+            #${MODAL_ID} .ig-warning a { color: #b71c1c; font-weight: bold; }
+            #${MODAL_ID} .ig-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+            #${MODAL_ID} .ig-row b { color: #444; }
+            #${MODAL_ID} input[type="number"] {
+                width: 100%;
+                padding: 8px 10px;
+                margin: 8px 0 4px;
+                border: 1px solid #ccc; border-radius: 4px;
+                font-size: 16px; text-align: center;
+            }
+            #${MODAL_ID} .ig-note { font-size: 11px; color: #777; margin: 6px 0 12px; }
+            #${MODAL_ID} .ig-actions { display: flex; gap: 8px; margin-top: 12px; }
+            #${MODAL_ID} button {
+                flex: 1;
+                padding: 10px;
+                border: none; border-radius: 6px;
+                font-weight: bold; cursor: pointer;
+                font-size: 14px;
+            }
+            #${MODAL_ID} .ig-confirm {
+                color: #fff;
+                background: linear-gradient(90deg, #6a1b9a 0%, #ad1457 100%);
+            }
+            #${MODAL_ID} .ig-cancel { background: #eee; color: #333; }
+
+            #${PROGRESS_OVERLAY_ID} {
+                position: fixed; bottom: 20px; right: 20px;
+                background: #1f1f1f; color: #fff;
+                padding: 14px 18px;
+                border-radius: 8px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+                z-index: 99999;
+                font-family: sans-serif;
+                min-width: 280px;
+            }
+            #${PROGRESS_OVERLAY_ID} h4 {
+                margin: 0 0 8px; font-size: 14px;
+                color: #ff7da6;
+            }
+            #${PROGRESS_OVERLAY_ID} .ig-prog-bar {
+                width: 100%; height: 6px;
+                background: #333; border-radius: 3px;
+                overflow: hidden; margin: 8px 0;
+            }
+            #${PROGRESS_OVERLAY_ID} .ig-prog-fill {
+                height: 100%;
+                background: linear-gradient(90deg, #6a1b9a 0%, #ad1457 100%);
+                width: 0%; transition: width 0.3s;
+            }
+            #${PROGRESS_OVERLAY_ID} .ig-prog-status { font-size: 12px; color: #ccc; }
+            #${PROGRESS_OVERLAY_ID} .ig-prog-warning {
+                margin-top: 8px;
+                padding: 6px 8px;
+                background: #4a1010;
+                border-left: 3px solid #ff5252;
+                border-radius: 3px;
+                font-size: 11px;
+                color: #ffb3b3;
+                line-height: 1.3;
+            }
+            #${PROGRESS_OVERLAY_ID} .ig-prog-actions { margin-top: 10px; }
+            #${PROGRESS_OVERLAY_ID} button {
+                padding: 6px 12px;
+                font-size: 12px; font-weight: bold;
+                border: none; border-radius: 4px;
+                cursor: pointer;
+                background: #c62828; color: #fff;
+            }
+            #${PROGRESS_OVERLAY_ID} button.ig-prog-close { background: #444; }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // =============================================
+    // MODAL: BULK JOIN (Extra Odds)
+    // =============================================
+    function openBulkConfirmModal(params, balance, contextLabel) {
+        return new Promise((resolve) => {
+            const maxCount = Math.floor(balance / params.price);
+            const backdrop = document.createElement('div');
+            backdrop.id = MODAL_ID + '-backdrop';
+            backdrop.innerHTML = `
+                <div id="${MODAL_ID}">
+                    <h3>${T.modalTitle}</h3>
+                    <div class="ig-warning">
+                        <b>${T.warningTitle}</b>
+                        ${T.warningBody}
+                        <div style="margin-top:6px"><a href="https://docs.indiegala.com/giveaways_auctions_trades/spam.html" target="_blank" rel="noopener">${T.warningPolicyLink}</a></div>
+                    </div>
+                    <div class="ig-row"><b>${T.modalGiveaway}</b><span>${escapeHtml(contextLabel)}</span></div>
+                    <div class="ig-row"><b>${T.modalPrice}</b><span>${params.price} iS</span></div>
+                    <div class="ig-row"><b>${T.modalBalance}</b><span>${balance} iS</span></div>
+                    <div class="ig-row"><b>${T.modalMax}</b><span>${maxCount}</span></div>
+                    <label style="display:block;margin-top:10px;font-size:12px;color:#555">${T.modalCount}:</label>
+                    <input type="number" id="ig-bulk-count" min="1" max="${maxCount}" value="${maxCount}">
+                    <div class="ig-row"><b>${T.modalTotalCost}</b><span id="ig-bulk-total">${maxCount * params.price} iS</span></div>
+                    <div class="ig-note">${T.modalDelays}</div>
+                    <div class="ig-actions">
+                        <button class="ig-cancel">${T.modalCancel}</button>
+                        <button class="ig-confirm">${T.modalConfirm}</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(backdrop);
+
+            const input = backdrop.querySelector('#ig-bulk-count');
+            const totalSpan = backdrop.querySelector('#ig-bulk-total');
+            const updateTotal = () => {
+                const v = parseInt(input.value, 10);
+                totalSpan.textContent = (isNaN(v) ? 0 : v * params.price) + ' iS';
+            };
+            input.addEventListener('input', updateTotal);
+            input.focus();
+            input.select();
+
+            const close = (val) => { backdrop.remove(); resolve(val); };
+            backdrop.querySelector('.ig-cancel').addEventListener('click', () => close(null));
+            backdrop.querySelector('.ig-confirm').addEventListener('click', () => {
+                const v = parseInt(input.value, 10);
+                if (isNaN(v) || v < 1 || v > maxCount) {
+                    alert(fmt(T.invalidCount, { max: maxCount }));
+                    return;
+                }
+                close(v);
+            });
+            backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(null); });
+            document.addEventListener('keydown', function escHandler(e) {
+                if (e.key === 'Escape') {
+                    document.removeEventListener('keydown', escHandler);
+                    close(null);
+                }
+            });
+        });
+    }
+
+    // =============================================
+    // MODAL: COLA (Single Ticket)
+    // =============================================
+    function openQueueConfirmModal() {
+        return new Promise((resolve) => {
+            const balance = getCurrentBalance();
+            if (balance == null) { alert(T.balanceUnknown); resolve(false); return; }
+            const totalCost = queue.reduce((s, q) => s + (q.price || 0), 0);
+
+            const backdrop = document.createElement('div');
+            backdrop.id = MODAL_ID + '-backdrop';
+            backdrop.innerHTML = `
+                <div id="${MODAL_ID}">
+                    <h3>${T.queueExecuteConfirmTitle}</h3>
+                    <div class="ig-warning">
+                        <b>${T.warningTitle}</b>
+                        ${T.warningBody}
+                        <div style="margin-top:6px"><a href="https://docs.indiegala.com/giveaways_auctions_trades/spam.html" target="_blank" rel="noopener">${T.warningPolicyLink}</a></div>
+                    </div>
+                    <div class="ig-row"><b>${T.queueModalCount}</b><span>${queue.length}</span></div>
+                    <div class="ig-row"><b>${T.modalTotalCost}</b><span>${totalCost} iS</span></div>
+                    <div class="ig-row"><b>${T.modalBalance}</b><span>${balance} iS</span></div>
+                    <div class="ig-note">${T.modalDelays}</div>
+                    <div class="ig-actions">
+                        <button class="ig-cancel">${T.modalCancel}</button>
+                        <button class="ig-confirm">${T.modalConfirm}</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(backdrop);
+
+            const close = (val) => { backdrop.remove(); resolve(val); };
+            backdrop.querySelector('.ig-cancel').addEventListener('click', () => close(false));
+            backdrop.querySelector('.ig-confirm').addEventListener('click', () => {
+                if (balance < totalCost) {
+                    if (!confirm(fmt(T.queueLowBalance, { balance, cost: totalCost }))) return;
+                }
+                close(true);
+            });
+            backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(false); });
+            document.addEventListener('keydown', function escHandler(e) {
+                if (e.key === 'Escape') {
+                    document.removeEventListener('keydown', escHandler);
+                    close(false);
+                }
+            });
+        });
+    }
+
+    // =============================================
+    // OVERLAY DE PROGRESO (compartido)
+    // =============================================
+    function showProgressOverlay(total, mode) {
+        let overlay = document.getElementById(PROGRESS_OVERLAY_ID);
+        if (overlay) overlay.remove();
+        overlay = document.createElement('div');
+        overlay.id = PROGRESS_OVERLAY_ID;
+        const title = mode === 'queue' ? T.progressTitleQueue : T.progressTitle;
+        const warn = mode === 'queue' ? T.warningProgressQueue : T.warningProgress;
+        overlay.innerHTML = `
+            <h4>${title}</h4>
+            <div class="ig-prog-status" id="ig-prog-status">${fmt(T.progressStatus, { i: 0, n: total })}</div>
+            <div class="ig-prog-bar"><div class="ig-prog-fill" id="ig-prog-fill"></div></div>
+            <div class="ig-prog-warning">${warn}</div>
+            <div class="ig-prog-actions"><button id="ig-prog-stop">${T.stopBtn}</button></div>
+        `;
+        document.body.appendChild(overlay);
+        document.getElementById('ig-prog-stop').addEventListener('click', () => { abortFlag = true; });
+    }
+
+    function updateProgress(done, total, statusText) {
+        const status = document.getElementById('ig-prog-status');
+        const fill = document.getElementById('ig-prog-fill');
+        if (status) status.textContent = statusText || fmt(T.progressStatus, { i: done, n: total });
+        if (fill) fill.style.width = Math.min(100, Math.round((done / total) * 100)) + '%';
+    }
+
+    function finalizeProgress(done, total, finalMsg) {
+        const overlay = document.getElementById(PROGRESS_OVERLAY_ID);
+        if (!overlay) return;
+        overlay.querySelector('.ig-prog-status').textContent = finalMsg || fmt(T.progressDone, { ok: done });
+        const actions = overlay.querySelector('.ig-prog-actions');
+        actions.innerHTML = `<button class="ig-prog-close">${T.closeBtn}</button>`;
+        actions.querySelector('.ig-prog-close').addEventListener('click', () => overlay.remove());
+    }
+
+    // =============================================
+    // LOOP: BULK JOIN (Extra Odds — N veces el mismo gid)
+    // =============================================
+    async function runBulkJoin(params, contextLabel) {
+        if (running) { alert(T.alreadyRunning); return; }
+
+        const balance = getCurrentBalance();
+        if (balance == null) { alert(T.balanceUnknown); return; }
+        if (Math.floor(balance / params.price) < 1) { alert(T.notEnough); return; }
+
+        const requested = await openBulkConfirmModal(params, balance, contextLabel);
+        if (!requested) return;
+
+        running = true;
+        abortFlag = false;
+        showProgressOverlay(requested, 'bulk');
+
+        let done = 0;
+        let stopReason = null;
+        try {
+            for (let i = 0; i < requested; i++) {
+                if (abortFlag) { stopReason = T.progressAborted; break; }
+
+                if (i > 0 && i % CFG.longPauseEvery === 0) {
+                    updateProgress(done, requested, T.progressLongPause);
+                    await abortableSleep(rand(CFG.longPauseMinMs, CFG.longPauseMaxMs));
+                    if (abortFlag) { stopReason = T.progressAborted; break; }
+                }
+
+                const trigger = findTrigger(params);
+                if (!trigger) { stopReason = T.progressTriggerLost; break; }
+
+                if (isErrorVisible(trigger)) { stopReason = T.progressErrorDetected; break; }
+
+                const balNow = getCurrentBalance();
+                if (balNow != null && balNow < params.price) { stopReason = T.progressBalanceLow; break; }
+
+                try {
+                    const fn = unsafeWindow[params.fnName];
+                    if (typeof fn !== 'function') { stopReason = T.progressTriggerLost; break; }
+                    fn.call(trigger, trigger, makeFakeEvent(), params.gid, params.fnArg2, params.token);
+                    done++;
+                    consumeBalance(params.price);
+                    updateProgress(done, requested);
+                } catch (e) {
+                    console.error('[IG-BulkTools] error en bulk join:', e);
+                    stopReason = T.progressErrorDetected;
+                    break;
+                }
+
+                if (i < requested - 1) {
+                    await abortableSleep(rand(CFG.minDelayMs, CFG.maxDelayMs));
+                }
+            }
+        } finally {
+            running = false;
+            const finalMsg = stopReason
+                ? `${stopReason} (${done}/${requested})`
+                : fmt(T.progressDone, { ok: done });
+            finalizeProgress(done, requested, finalMsg);
+        }
+    }
+
+    // =============================================
+    // LOOP: COLA (Single Ticket — N gids distintos, 1 vez cada uno)
+    // =============================================
+    async function executeQueue() {
+        if (running) { alert(T.alreadyRunning); return; }
+        if (!queue.length) return;
+
+        const ok = await openQueueConfirmModal();
+        if (!ok) return;
+
+        running = true;
+        abortFlag = false;
+        renderQueuePanel();
+
+        const items = queue.slice();
+        const total = items.length;
+        showProgressOverlay(total, 'queue');
+
+        let success = 0;
+        let stopReason = null;
+
+        try {
+            for (let i = 0; i < items.length; i++) {
+                if (abortFlag) { stopReason = T.progressAborted; break; }
+
+                const it = items[i];
+
+                if (i > 0 && i % CFG.longPauseEvery === 0) {
+                    updateProgress(success, total, T.progressLongPause);
+                    await abortableSleep(rand(CFG.longPauseMinMs, CFG.longPauseMaxMs));
+                    if (abortFlag) { stopReason = T.progressAborted; break; }
+                }
+
+                updateProgress(success, total, fmt(T.queueProgressItem, { title: it.title, i: i + 1, n: total }));
+
+                // Refrescar token, fnArg2 y price desde el DOM si el card sigue visible.
+                // Si el item de la cola es viejo (sin fnArg2 guardado), caer al precio
+                // como fallback (compatibilidad hacia atras con colas persistidas antes
+                // de separar fnArg2/price).
+                let gid = it.gid;
+                let price = it.price;
+                let token = it.token;
+                let fnArg2 = (it.fnArg2 != null) ? it.fnArg2 : it.price;
+                let triggerEl = findTrigger({ gid: it.gid, fnName: 'joinGiveawayOrAuction' });
+                if (triggerEl) {
+                    const live = parseJoinOnclick(triggerEl, 'joinGiveawayOrAuction');
+                    if (live) { gid = live.gid; token = live.token; fnArg2 = live.fnArg2; }
+                    const liveItem = triggerEl.closest('.items-list-item');
+                    const dp = findDataPrice(liveItem || document);
+                    if (dp != null) price = dp;
+                    if (isErrorVisible(triggerEl)) { stopReason = T.progressErrorDetected; break; }
+                }
+
+                const balNow = getCurrentBalance();
+                if (balNow != null && balNow < price) { stopReason = T.progressBalanceLow; break; }
+
+                try {
+                    const fn = unsafeWindow.joinGiveawayOrAuction;
+                    if (typeof fn !== 'function') { stopReason = T.progressTriggerLost; break; }
+                    const elForCall = triggerEl || makeFakeAnchor();
+                    fn.call(elForCall, elForCall, makeFakeEvent(), gid, fnArg2, token);
+                    success++;
+                    consumeBalance(price);
+                    removeFromQueue(it.gid);
+                    updateProgress(success, total, fmt(T.queueProgressItem, { title: it.title, i: i + 1, n: total }));
+                } catch (e) {
+                    console.error('[IG-BulkTools] error en queue join:', it, e);
+                    // Continuar con el siguiente item
+                }
+
+                if (i < items.length - 1) {
+                    await abortableSleep(rand(CFG.minDelayMs, CFG.maxDelayMs));
+                }
+            }
+        } finally {
+            running = false;
+            const finalMsg = stopReason
+                ? `${stopReason} (${success}/${total})`
+                : fmt(T.queueDone, { ok: success, n: total });
+            finalizeProgress(success, total, finalMsg);
+            renderQueuePanel();
+        }
+    }
+
+    // =============================================
+    // PANEL FLOTANTE DE LA COLA (solo en /giveaways)
+    // =============================================
+    function renderQueuePanel() {
+        const existing = document.getElementById(PANEL_ID);
+
+        // Si no estamos en el listado raiz, ocultar el panel pero mantener la cola persistida
+        if (!isListingRoot()) {
+            if (existing) existing.remove();
+            return;
+        }
+
+        let panel = existing;
+        if (!panel) {
+            panel = document.createElement('div');
+            panel.id = PANEL_ID;
+            document.body.appendChild(panel);
+        }
+        if (!queue.length) {
+            panel.style.display = 'none';
+            panel.innerHTML = '';
+            return;
+        }
+        panel.style.display = '';
+        const totalCost = queue.reduce((s, q) => s + (q.price || 0), 0);
+        const items = queue.map(q => `
+            <li>
+                <span class="ig-q-it-title" title="${escapeHtml(q.title)} — ${escapeHtml(q.timeLeft || '')}">${escapeHtml(q.title)}</span>
+                <span class="ig-q-it-price">${q.price} iS</span>
+                <button class="ig-q-it-rem" data-gid="${escapeHtml(q.gid)}" title="${T.queueRemoveBtnTooltip}">×</button>
+            </li>
+        `).join('');
+        panel.innerHTML = `
+            <div class="ig-q-warning-bar">${T.warningProgressQueue}</div>
+            <h4>${T.queuePanelTitle}</h4>
+            <div class="ig-q-summary">${fmt(T.queueTotalCost, { n: queue.length, cost: totalCost })}</div>
+            <ul class="ig-q-list">${items}</ul>
+            <div class="ig-q-actions">
+                <button id="ig-q-clear">${T.queueClearBtn}</button>
+                <button id="ig-q-exec"${running ? ' disabled' : ''}>${T.queueExecuteBtn}</button>
+            </div>
+        `;
+        panel.querySelectorAll('.ig-q-it-rem').forEach(b => {
+            b.addEventListener('click', (e) => {
+                e.stopPropagation();
+                removeFromQueue(b.dataset.gid);
+            });
+        });
+        panel.querySelector('#ig-q-clear').addEventListener('click', () => {
+            if (confirm(T.queueClearConfirm)) clearQueue();
+        });
+        panel.querySelector('#ig-q-exec').addEventListener('click', executeQueue);
+    }
+
+    function refreshQueueButtonsState() {
+        document.querySelectorAll('.' + QBTN_CLASS).forEach(btn => {
+            const gid = btn.dataset.gid;
+            const inQ = isInQueue(gid);
+            btn.classList.toggle('ig-q-btn-active', inQ);
+            btn.textContent = inQ ? T.queueRemoveBtn : T.queueAddBtn;
+            btn.title = inQ ? T.queueRemoveBtnTooltip : T.queueAddBtnTooltip;
+        });
+    }
+
+    // =============================================
+    // INYECCION: PAGINA DE CARD (/giveaways/card/*)
+    // =============================================
+    function injectCardDetail() {
+        if (!isCardDetail()) return;
+
+        let isExtraOdds = false;
+        document.querySelectorAll('.card-data .card-data-text').forEach(el => {
+            if (/^extra\s*odds$/i.test(el.textContent.trim())) isExtraOdds = true;
+        });
+        if (!isExtraOdds) return;
+
+        const joinAnchor = document.querySelector('.card-join a[data-price]');
+        if (!joinAnchor) return;
+        const cardJoinDiv = joinAnchor.closest('.card-join');
+        if (!cardJoinDiv || cardJoinDiv.parentElement.querySelector('.' + BULK_BTN_CLASS)) return;
+
+        const params = parseJoinOnclick(joinAnchor, 'joinGiveawayCard');
+        if (!params) return;
+        // En el card detail, joinAnchor es el mismo elemento con data-price
+        const dpCard = parseInt(joinAnchor.getAttribute('data-price'), 10);
+        if (!isNaN(dpCard)) params.price = dpCard;
+
+        const title = (document.querySelector('.card-title h1') || {}).textContent || `#${params.gid}`;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = BULK_BTN_CLASS;
+        btn.textContent = `${T.bulkLabel} (${params.price} iS × N)`;
+        btn.title = T.bulkLabelTooltip;
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            runBulkJoin(params, title.trim());
+        });
+        cardJoinDiv.parentElement.appendChild(btn);
+    }
+
+    // =============================================
+    // INYECCION: PAGINA DE LISTADO (/giveaways*)
+    //   - Extra Odds: badge bulk-join (top-right) en cualquier listado
+    //   - Single Ticket: boton de cola (top-left) SOLO en /giveaways
+    // =============================================
+    function injectListing() {
+        const onListingRoot = isListingRoot();
+
+        document.querySelectorAll('.items-list-item').forEach(item => {
+            const typeEl = item.querySelector('.items-list-item-type');
+            if (!typeEl) return;
+
+            const trigger = item.querySelector('a.items-list-item-ticket-click');
+            if (!trigger) return;
+            const params = parseJoinOnclick(trigger, 'joinGiveawayOrAuction');
+            if (!params) return;
+            // En el listado el data-price esta en el boton interno, no en el trigger.
+            // Para Single Ticket, el segundo arg del onclick es 0; el precio real solo
+            // se obtiene de data-price.
+            const dpItem = findDataPrice(item);
+            if (dpItem != null) params.price = dpItem;
+
+            const titleA = item.querySelector('.items-list-item-title a');
+            const title = titleA ? titleA.textContent.trim() : `#${params.gid}`;
+            const timeEl = item.querySelector('.items-list-item-data-left-bottom');
+            const timeLeft = timeEl ? timeEl.textContent.trim() : '';
+
+            const host = item.querySelector(':scope > .relative') || item;
+            const cs = window.getComputedStyle(host);
+            if (cs.position === 'static') host.style.position = 'relative';
+
+            const typeText = (typeEl.textContent || '').trim().toLowerCase();
+            const isExtraOdds = typeEl.classList.contains('items-list-item-type-indiegala')
+                || /extra\s*odds/i.test(typeText);
+            const isSingleTicket = /^single\s*ticket/.test(typeText);
+
+            // Extra Odds: badge de bulk-join (en cualquier listado)
+            if (isExtraOdds && params.price >= 1 && !host.querySelector('.' + BULK_BADGE_CLASS)) {
+                const balance = getCurrentBalance();
+                const maxCount = balance != null ? Math.floor(balance / params.price) : 0;
+
+                const badge = document.createElement('div');
+                badge.className = BULK_BADGE_CLASS;
+                badge.dataset.price = String(params.price);
+                badge.textContent = fmt(T.bulkBadge, { n: maxCount });
+                badge.title = fmt(T.bulkBadgeTooltip, { n: maxCount });
+                badge.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    runBulkJoin(params, title);
+                });
+                host.appendChild(badge);
+            }
+
+            // Single Ticket: boton de cola SOLO en /giveaways
+            if (isSingleTicket && onListingRoot && !host.querySelector('.' + QBTN_CLASS)) {
+                const btn = document.createElement('div');
+                btn.className = QBTN_CLASS;
+                btn.dataset.gid = params.gid;
+                const inQ = isInQueue(params.gid);
+                btn.classList.toggle('ig-q-btn-active', inQ);
+                btn.textContent = inQ ? T.queueRemoveBtn : T.queueAddBtn;
+                btn.title = inQ ? T.queueRemoveBtnTooltip : T.queueAddBtnTooltip;
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (isInQueue(params.gid)) {
+                        removeFromQueue(params.gid);
+                    } else {
+                        addToQueue({
+                            gid: params.gid,
+                            price: params.price,       // costo en iS (data-price)
+                            fnArg2: params.fnArg2,     // segundo arg para joinGiveawayOrAuction
+                            token: params.token,
+                            title: title,
+                            timeLeft: timeLeft,
+                            addedAt: Date.now(),
+                        });
+                    }
+                });
+                host.appendChild(btn);
+            }
+        });
+    }
+
+    function injectAll() {
+        try { injectStyles(); } catch (e) {}
+        try { injectCardDetail(); } catch (e) { console.error('[IG-BulkTools] injectCardDetail:', e); }
+        try { injectListing(); } catch (e) { console.error('[IG-BulkTools] injectListing:', e); }
+        try { renderQueuePanel(); } catch (e) { console.error('[IG-BulkTools] renderQueuePanel:', e); }
+    }
+
+    // =============================================
+    // OBSERVADOR DE DOM (los listados se cargan por AJAX/carrusel)
+    // =============================================
+    function startObserver() {
+        injectAll();
+        const observer = new MutationObserver(() => {
+            if (startObserver._t) return;
+            startObserver._t = setTimeout(() => {
+                startObserver._t = null;
+                injectAll();
+            }, 250);
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', startObserver);
+    } else {
+        startObserver();
+    }
+})();
