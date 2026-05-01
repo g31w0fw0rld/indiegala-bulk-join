@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.1.0
 // @description  Anade dos herramientas a Indiegala Giveaways: (1) compra masiva de boletos en giveaways "Extra Odds" (card y listado); (2) cola de "Single Ticket" desde el listado para entrar a varios giveaways de forma secuencial. Delays humanizados, control de aborto. ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -46,7 +46,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.0.0';
+    const SCRIPT_VERSION = '1.1.0';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
@@ -84,6 +84,8 @@
             queueAddBtnTooltip: '⚠ Riesgo de ban — añadir este giveaway a la cola para entrar automáticamente. Uso bajo tu propio riesgo.',
             queueRemoveBtn: '✓',
             queueRemoveBtnTooltip: 'En cola — clic para quitar',
+            queueNoBalance: 'Sin GalaSilver disponible. Recarga para encolar más giveaways.',
+            queueNoBalanceTooltip: 'Sin GalaSilver — no puedes encolar este giveaway',
             queuePanelTitle: '⚠ Cola Single Ticket',
             queueTotalCost: '{n} boletos · {cost} iS',
             queueExecuteBtn: '▶ Ejecutar',
@@ -137,6 +139,8 @@
             queueAddBtnTooltip: '⚠ Ban risk — add this giveaway to the queue for automatic entry. Use at your own risk.',
             queueRemoveBtn: '✓',
             queueRemoveBtnTooltip: 'In queue — click to remove',
+            queueNoBalance: 'No GalaSilver available. Top up to queue more giveaways.',
+            queueNoBalanceTooltip: 'No GalaSilver — cannot queue this giveaway',
             queuePanelTitle: '⚠ Single Ticket Queue',
             queueTotalCost: '{n} tickets · {cost} iS',
             queueExecuteBtn: '▶ Execute',
@@ -297,14 +301,22 @@
     }
 
     // Devuelve el saldo cacheado o lo inicializa desde el DOM la primera vez.
+    // Si el DOM ya muestra un saldo MENOR que el cache (porque hubo joins
+    // manuales fuera del script o el sitio refresco la cifra), prefiere el del
+    // DOM como verdad mas conservadora; nunca sube por encima de lo que tenia
+    // el cache (al revertir, el modal podria mostrar mas iS de los disponibles).
     function getCurrentBalance() {
+        const dom = getGalaSilver();
         if (currentBalance == null) {
-            currentBalance = getGalaSilver();
+            currentBalance = dom;
+        } else if (dom != null && dom < currentBalance) {
+            currentBalance = dom;
         }
         return currentBalance;
     }
 
-    // Decrementa el saldo cacheado tras un join exitoso y refresca los badges.
+    // Decrementa el saldo cacheado tras un join exitoso, sincroniza con el DOM
+    // (toma el menor) y refresca badges + estado de los botones de cola.
     function consumeBalance(amount) {
         if (currentBalance == null) {
             currentBalance = getGalaSilver();
@@ -312,7 +324,15 @@
         if (currentBalance != null) {
             currentBalance = Math.max(0, currentBalance - (amount || 0));
         }
+        // Re-verificar contra el div de info del usuario por si Indiegala ya
+        // actualizo el saldo (caso comun: respuesta del servidor llegada antes
+        // del siguiente tick) y para protegernos de quedar por encima del real.
+        const dom = getGalaSilver();
+        if (dom != null) {
+            currentBalance = (currentBalance == null) ? dom : Math.min(currentBalance, dom);
+        }
         refreshBulkBadges();
+        refreshQueueButtonsState();
     }
 
     // Recalcula el "maximo posible" mostrado en cada badge de Extra Odds visible.
@@ -500,6 +520,12 @@
                 background: linear-gradient(135deg, #2e7d32 0%, #66bb6a 100%);
                 border-color: #fff;
             }
+            .${QBTN_CLASS}.ig-q-btn-disabled {
+                opacity: 0.4;
+                cursor: not-allowed;
+                background: rgba(40, 40, 40, 0.85);
+            }
+            .${QBTN_CLASS}.ig-q-btn-disabled:hover { transform: none; }
 
             #${PANEL_ID} {
                 position: fixed;
@@ -670,8 +696,140 @@
                 background: #c62828; color: #fff;
             }
             #${PROGRESS_OVERLAY_ID} button.ig-prog-close { background: #444; }
+
+            #ig-toast-container {
+                position: fixed;
+                top: 20px; right: 20px;
+                z-index: 100000;
+                display: flex; flex-direction: column;
+                gap: 8px;
+                pointer-events: none;
+            }
+            .ig-toast {
+                background: #1f1f1f;
+                color: #fff;
+                border-left: 4px solid #888;
+                border-radius: 6px;
+                padding: 12px 16px;
+                box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+                font-family: sans-serif;
+                font-size: 13px;
+                line-height: 1.35;
+                max-width: 360px;
+                min-width: 220px;
+                cursor: pointer;
+                pointer-events: auto;
+                opacity: 0;
+                transform: translateX(20px);
+                transition: opacity 0.25s, transform 0.25s;
+            }
+            .ig-toast-visible { opacity: 1; transform: translateX(0); }
+            .ig-toast-info { border-left-color: #2196f3; }
+            .ig-toast-warn { border-left-color: #ff9800; background: #2a1f10; }
+            .ig-toast-error { border-left-color: #d32f2f; background: #2a1010; }
+
+            .ig-confirm-backdrop {
+                position: fixed; inset: 0;
+                background: rgba(0,0,0,0.65);
+                z-index: 100001;
+                display: flex; align-items: center; justify-content: center;
+            }
+            .ig-confirm-modal {
+                background: #fff; color: #222;
+                border-radius: 8px;
+                padding: 20px 24px;
+                max-width: 420px; width: 90%;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+                font-family: sans-serif;
+            }
+            .ig-confirm-modal h3 {
+                margin: 0 0 10px; font-size: 16px; color: #ad1457;
+            }
+            .ig-confirm-modal p {
+                margin: 0 0 14px; font-size: 14px; line-height: 1.45;
+                white-space: pre-wrap;
+            }
+            .ig-confirm-actions { display: flex; gap: 8px; }
+            .ig-confirm-actions button {
+                flex: 1;
+                padding: 10px;
+                border: none; border-radius: 6px;
+                font-weight: bold; cursor: pointer;
+                font-size: 14px;
+            }
+            .ig-confirm-cancel { background: #eee; color: #333; }
+            .ig-confirm-ok {
+                color: #fff;
+                background: linear-gradient(90deg, #6a1b9a 0%, #ad1457 100%);
+            }
+
+            #${MODAL_ID} .ig-inline-error {
+                color: #b71c1c;
+                font-size: 12px;
+                margin-top: 6px;
+                padding: 6px 10px;
+                background: #ffebee;
+                border: 1px solid #ef9a9a;
+                border-radius: 4px;
+                display: none;
+            }
+            #${MODAL_ID} .ig-inline-error.ig-visible { display: block; }
         `;
         document.head.appendChild(style);
+    }
+
+    // =============================================
+    // TOAST (notificaciones no-bloqueantes)
+    // =============================================
+    function showToast(message, type) {
+        let container = document.getElementById('ig-toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'ig-toast-container';
+            document.body.appendChild(container);
+        }
+        const toast = document.createElement('div');
+        toast.className = 'ig-toast ig-toast-' + (type || 'info');
+        toast.textContent = message;
+        container.appendChild(toast);
+        requestAnimationFrame(() => toast.classList.add('ig-toast-visible'));
+        const dismiss = () => {
+            toast.classList.remove('ig-toast-visible');
+            setTimeout(() => toast.remove(), 300);
+        };
+        toast.addEventListener('click', dismiss);
+        setTimeout(dismiss, 4500);
+    }
+
+    // =============================================
+    // CONFIRM MODAL (reemplazo de window.confirm)
+    // =============================================
+    function showConfirm(message, title) {
+        return new Promise((resolve) => {
+            const backdrop = document.createElement('div');
+            backdrop.className = 'ig-confirm-backdrop';
+            backdrop.innerHTML = `
+                <div class="ig-confirm-modal">
+                    ${title ? `<h3>${escapeHtml(title)}</h3>` : ''}
+                    <p>${escapeHtml(message)}</p>
+                    <div class="ig-confirm-actions">
+                        <button class="ig-confirm-cancel">${T.modalCancel}</button>
+                        <button class="ig-confirm-ok">${T.modalConfirm}</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(backdrop);
+            const close = (val) => { backdrop.remove(); resolve(val); };
+            backdrop.querySelector('.ig-confirm-cancel').addEventListener('click', () => close(false));
+            backdrop.querySelector('.ig-confirm-ok').addEventListener('click', () => close(true));
+            backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(false); });
+            document.addEventListener('keydown', function escHandler(e) {
+                if (e.key === 'Escape') {
+                    document.removeEventListener('keydown', escHandler);
+                    close(false);
+                }
+            });
+        });
     }
 
     // =============================================
@@ -696,6 +854,7 @@
                     <div class="ig-row"><b>${T.modalMax}</b><span>${maxCount}</span></div>
                     <label style="display:block;margin-top:10px;font-size:12px;color:#555">${T.modalCount}:</label>
                     <input type="number" id="ig-bulk-count" min="1" max="${maxCount}" value="${maxCount}">
+                    <div class="ig-inline-error" id="ig-bulk-error"></div>
                     <div class="ig-row"><b>${T.modalTotalCost}</b><span id="ig-bulk-total">${maxCount * params.price} iS</span></div>
                     <div class="ig-note">${T.modalDelays}</div>
                     <div class="ig-actions">
@@ -708,9 +867,11 @@
 
             const input = backdrop.querySelector('#ig-bulk-count');
             const totalSpan = backdrop.querySelector('#ig-bulk-total');
+            const errorEl = backdrop.querySelector('#ig-bulk-error');
             const updateTotal = () => {
                 const v = parseInt(input.value, 10);
                 totalSpan.textContent = (isNaN(v) ? 0 : v * params.price) + ' iS';
+                errorEl.classList.remove('ig-visible');
             };
             input.addEventListener('input', updateTotal);
             input.focus();
@@ -721,7 +882,10 @@
             backdrop.querySelector('.ig-confirm').addEventListener('click', () => {
                 const v = parseInt(input.value, 10);
                 if (isNaN(v) || v < 1 || v > maxCount) {
-                    alert(fmt(T.invalidCount, { max: maxCount }));
+                    errorEl.textContent = fmt(T.invalidCount, { max: maxCount });
+                    errorEl.classList.add('ig-visible');
+                    input.focus();
+                    input.select();
                     return;
                 }
                 close(v);
@@ -742,7 +906,7 @@
     function openQueueConfirmModal() {
         return new Promise((resolve) => {
             const balance = getCurrentBalance();
-            if (balance == null) { alert(T.balanceUnknown); resolve(false); return; }
+            if (balance == null) { showToast(T.balanceUnknown, 'error'); resolve(false); return; }
             const totalCost = queue.reduce((s, q) => s + (q.price || 0), 0);
 
             const backdrop = document.createElement('div');
@@ -769,9 +933,13 @@
 
             const close = (val) => { backdrop.remove(); resolve(val); };
             backdrop.querySelector('.ig-cancel').addEventListener('click', () => close(false));
-            backdrop.querySelector('.ig-confirm').addEventListener('click', () => {
+            backdrop.querySelector('.ig-confirm').addEventListener('click', async () => {
                 if (balance < totalCost) {
-                    if (!confirm(fmt(T.queueLowBalance, { balance, cost: totalCost }))) return;
+                    const ok = await showConfirm(
+                        fmt(T.queueLowBalance, { balance, cost: totalCost }),
+                        T.warningTitle
+                    );
+                    if (!ok) return;
                 }
                 close(true);
             });
@@ -826,11 +994,11 @@
     // LOOP: BULK JOIN (Extra Odds — N veces el mismo gid)
     // =============================================
     async function runBulkJoin(params, contextLabel) {
-        if (running) { alert(T.alreadyRunning); return; }
+        if (running) { showToast(T.alreadyRunning, 'warn'); return; }
 
         const balance = getCurrentBalance();
-        if (balance == null) { alert(T.balanceUnknown); return; }
-        if (Math.floor(balance / params.price) < 1) { alert(T.notEnough); return; }
+        if (balance == null) { showToast(T.balanceUnknown, 'error'); return; }
+        if (Math.floor(balance / params.price) < 1) { showToast(T.notEnough, 'warn'); return; }
 
         const requested = await openBulkConfirmModal(params, balance, contextLabel);
         if (!requested) return;
@@ -889,7 +1057,7 @@
     // LOOP: COLA (Single Ticket — N gids distintos, 1 vez cada uno)
     // =============================================
     async function executeQueue() {
-        if (running) { alert(T.alreadyRunning); return; }
+        if (running) { showToast(T.alreadyRunning, 'warn'); return; }
         if (!queue.length) return;
 
         const ok = await openQueueConfirmModal();
@@ -1017,19 +1185,27 @@
                 removeFromQueue(b.dataset.gid);
             });
         });
-        panel.querySelector('#ig-q-clear').addEventListener('click', () => {
-            if (confirm(T.queueClearConfirm)) clearQueue();
+        panel.querySelector('#ig-q-clear').addEventListener('click', async () => {
+            const ok = await showConfirm(T.queueClearConfirm);
+            if (ok) clearQueue();
         });
         panel.querySelector('#ig-q-exec').addEventListener('click', executeQueue);
     }
 
     function refreshQueueButtonsState() {
+        const bal = currentBalance; // saldo crudo (no fuerza lectura DOM aqui)
         document.querySelectorAll('.' + QBTN_CLASS).forEach(btn => {
             const gid = btn.dataset.gid;
             const inQ = isInQueue(gid);
+            // Solo se "deshabilita" visualmente para AÑADIR; los items ya en cola
+            // siempre permiten quitarse aunque el saldo sea 0.
+            const noBalance = !inQ && bal != null && bal <= 0;
             btn.classList.toggle('ig-q-btn-active', inQ);
+            btn.classList.toggle('ig-q-btn-disabled', noBalance);
             btn.textContent = inQ ? T.queueRemoveBtn : T.queueAddBtn;
-            btn.title = inQ ? T.queueRemoveBtnTooltip : T.queueAddBtnTooltip;
+            btn.title = inQ
+                ? T.queueRemoveBtnTooltip
+                : (noBalance ? T.queueNoBalanceTooltip : T.queueAddBtnTooltip);
         });
     }
 
@@ -1139,17 +1315,21 @@
                     e.stopPropagation();
                     if (isInQueue(params.gid)) {
                         removeFromQueue(params.gid);
-                    } else {
-                        addToQueue({
-                            gid: params.gid,
-                            price: params.price,       // costo en iS (data-price)
-                            fnArg2: params.fnArg2,     // segundo arg para joinGiveawayOrAuction
-                            token: params.token,
-                            title: title,
-                            timeLeft: timeLeft,
-                            addedAt: Date.now(),
-                        });
+                        return;
                     }
+                    // Bloquear encolado cuando no hay GalaSilver disponible.
+                    const bal = getCurrentBalance();
+                    if (bal == null) { showToast(T.balanceUnknown, 'error'); return; }
+                    if (bal <= 0) { showToast(T.queueNoBalance, 'warn'); return; }
+                    addToQueue({
+                        gid: params.gid,
+                        price: params.price,       // costo en iS (data-price)
+                        fnArg2: params.fnArg2,     // segundo arg para joinGiveawayOrAuction
+                        token: params.token,
+                        title: title,
+                        timeLeft: timeLeft,
+                        addedAt: Date.now(),
+                    });
                 });
                 host.appendChild(btn);
             }
@@ -1161,6 +1341,9 @@
         try { injectCardDetail(); } catch (e) { console.error('[IG-BulkTools] injectCardDetail:', e); }
         try { injectListing(); } catch (e) { console.error('[IG-BulkTools] injectListing:', e); }
         try { renderQueuePanel(); } catch (e) { console.error('[IG-BulkTools] renderQueuePanel:', e); }
+        // Asegurar que botones recien inyectados reflejen el estado de saldo (deshabilitar
+        // los ＋ cuando bal=0). Tambien resincroniza con el DOM si Indiegala actualizo iS.
+        try { getCurrentBalance(); refreshQueueButtonsState(); refreshBulkBadges(); } catch (e) {}
     }
 
     // =============================================
