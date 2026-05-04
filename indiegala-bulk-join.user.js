@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
+// @version      1.1.1
 // @description  Anade dos herramientas a Indiegala Giveaways: (1) compra masiva de boletos en giveaways "Extra Odds" (card y listado); (2) cola de "Single Ticket" desde el listado para entrar a varios giveaways de forma secuencial. Delays humanizados, control de aborto. ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -46,7 +46,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.1.0';
+    const SCRIPT_VERSION = '1.1.1';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
@@ -111,6 +111,9 @@
             progressErrorDetected: 'Error detectado. Deteniendo.',
             progressTriggerLost: 'No encuentro el botón JOIN. Deteniendo.',
             progressBalanceLow: 'Saldo bajó por debajo del precio. Deteniendo.',
+            progressTooFast: 'El servidor pidió bajar el ritmo (too_fast). Deteniendo.',
+            progressBanned: 'Cuenta baneada según el servidor. Deteniendo.',
+            progressJoinTimeout: 'Sin respuesta del servidor para el join. Deteniendo.',
             progressAborted: 'Detenido por el usuario.',
             progressDone: 'Listo. {ok} boletos comprados.',
             stopBtn: 'Detener',
@@ -166,6 +169,9 @@
             progressErrorDetected: 'Error detected. Stopping.',
             progressTriggerLost: 'JOIN button not found. Stopping.',
             progressBalanceLow: 'Balance dropped below price. Stopping.',
+            progressTooFast: 'Server rate-limited (too_fast). Stopping.',
+            progressBanned: 'Account banned per server. Stopping.',
+            progressJoinTimeout: 'No response from server for join. Stopping.',
             progressAborted: 'Stopped by user.',
             progressDone: 'Done. {ok} tickets bought.',
             stopBtn: 'Stop',
@@ -184,6 +190,7 @@
         longPauseEvery: 10,
         longPauseMinMs: 10000,
         longPauseMaxMs: 20000,
+        joinResponseTimeoutMs: 60000,
     };
 
     const STORAGE_KEY = 'ig-st-queue';
@@ -272,8 +279,17 @@
         }[c]));
     }
 
-    // Lee saldo GalaSilver del DOM (esta en el dropdown del usuario, con texto "GALASILVER" cerca del valor "N iS")
+    // Lee saldo GalaSilver del DOM. Primera fuente: #galasilver-amount, que es
+    // el unico elemento que el sitio actualiza en vivo tras cada respuesta de
+    // /giveaways/join (success de joinGiveawayOrAuction). Si no existe (layouts
+    // antiguos o paginas sin dropdown renderizado), cae al TreeWalker buscando
+    // el texto "GALASILVER … N iS".
     function getGalaSilver() {
+        const el = document.getElementById('galasilver-amount');
+        if (el) {
+            const num = parseInt((el.innerText || el.textContent || '').replace(/[,.\s]/g, ''), 10);
+            if (!isNaN(num)) return num;
+        }
         const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
             acceptNode: (n) => /galasilver/i.test(n.textContent) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
         });
@@ -333,6 +349,105 @@
         }
         refreshBulkBadges();
         refreshQueueButtonsState();
+    }
+
+    // Lee el saldo del DOM y SOBREESCRIBE el cache (puede subir o bajar). A
+    // diferencia de getCurrentBalance/consumeBalance, no usa Math.min: aqui se
+    // confia en el div del usuario como verdad. Pensado para puntos donde el
+    // usuario hace una accion explicita y queremos darle la cifra mas reciente
+    // (p.ej. cuando intenta encolar y el cache dice 0).
+    function forceReadBalance() {
+        const dom = getGalaSilver();
+        if (dom != null) {
+            currentBalance = dom;
+            refreshBulkBadges();
+            refreshQueueButtonsState();
+        }
+        return currentBalance;
+    }
+
+    // Re-sincroniza el saldo cacheado con el DOM tras finalizar una ejecucion
+    // (cola o bulk). Inmediato + diferido a 3s para captar la respuesta del
+    // servidor que pudo actualizar el div del usuario despues del loop.
+    // Mantiene comportamiento conservador via Math.min en getCurrentBalance:
+    // si el DOM esta stale (mas alto), el cache no sube; si el DOM ya bajo
+    // (mas bajo), el cache se ajusta. Asi ningun modal abierto despues mostrara
+    // un saldo superior al real.
+    function resyncBalanceAfterRun() {
+        const apply = () => {
+            try {
+                getCurrentBalance();
+                refreshBulkBadges();
+                refreshQueueButtonsState();
+            } catch (e) {}
+        };
+        apply();
+        setTimeout(apply, 3000);
+    }
+
+    // Cola FIFO de promesas en espera de la siguiente respuesta de /giveaways/join.
+    // El loop bulk/cola se suscribe ANTES de disparar fn.call y luego await: cuando
+    // ajaxComplete cae, se resuelve el primer waiter con el payload del servidor.
+    // Asi el siguiente tick del loop ya tiene saldo y status reales en lugar de
+    // continuar a ciegas mientras la respuesta sigue en vuelo.
+    const joinResolveQueue = [];
+    function awaitNextJoinResponse(timeoutMs) {
+        return new Promise((resolve) => {
+            let settled = false;
+            const resolver = (payload) => {
+                if (settled) return;
+                settled = true;
+                resolve(payload);
+            };
+            joinResolveQueue.push(resolver);
+            setTimeout(() => {
+                if (settled) return;
+                const idx = joinResolveQueue.indexOf(resolver);
+                if (idx >= 0) joinResolveQueue.splice(idx, 1);
+                resolver({ timedOut: true, status: null, response: null });
+            }, timeoutMs);
+        });
+    }
+
+    // Engancha jQuery del sitio para capturar el saldo autoritativo que devuelve
+    // /giveaways/join en cada respuesta. La pagina ya hace el POST y recibe
+    // responseData.silver_tot; aqui solo escuchamos el ajaxComplete para tomar
+    // ese numero como verdad y sobreescribir el cache, sin depender del DOM ni
+    // del decremento local. Ademas resuelve a cualquier waiter en joinResolveQueue
+    // (sea status ok o de error) para que los loops no avancen sin saber el
+    // resultado del request anterior.
+    function setupAjaxBalanceHook() {
+        try {
+            const jq = (typeof unsafeWindow !== 'undefined' && unsafeWindow.jQuery) || window.jQuery;
+            if (!jq || setupAjaxBalanceHook._done) return;
+            setupAjaxBalanceHook._done = true;
+            jq(document).ajaxComplete(function (_e, xhr, settings) {
+                if (!settings || !settings.url) return;
+                if (settings.url.indexOf('/giveaways/join') === -1) return;
+                let r = xhr && xhr.responseJSON;
+                if (!r && xhr && typeof xhr.responseText === 'string') {
+                    try { r = JSON.parse(xhr.responseText); } catch (_) { r = null; }
+                }
+                if (r && r.status === 'ok' && typeof r.silver_tot === 'number') {
+                    currentBalance = r.silver_tot;
+                    try { refreshBulkBadges(); } catch (e) {}
+                    try { refreshQueueButtonsState(); } catch (e) {}
+                }
+                if (joinResolveQueue.length > 0) {
+                    const resolver = joinResolveQueue.shift();
+                    try {
+                        resolver({
+                            timedOut: false,
+                            status: r && r.status,
+                            code: r && r.code,
+                            response: r,
+                        });
+                    } catch (_) {}
+                }
+            });
+        } catch (e) {
+            console.error('[IG-BulkTools] setupAjaxBalanceHook:', e);
+        }
     }
 
     // Recalcula el "maximo posible" mostrado en cada badge de Extra Odds visible.
@@ -1030,10 +1145,22 @@
                 try {
                     const fn = unsafeWindow[params.fnName];
                     if (typeof fn !== 'function') { stopReason = T.progressTriggerLost; break; }
+                    // Suscribir ANTES del fn.call para no perder el ajaxComplete
+                    // si el sitio responde demasiado rapido. El hook actualiza
+                    // currentBalance con r.silver_tot, asi que aqui no se llama
+                    // a consumeBalance — duplicaria el decremento.
+                    const joinPromise = awaitNextJoinResponse(CFG.joinResponseTimeoutMs);
                     fn.call(trigger, trigger, makeFakeEvent(), params.gid, params.fnArg2, params.token);
-                    done++;
-                    consumeBalance(params.price);
-                    updateProgress(done, requested);
+                    const result = await joinPromise;
+                    if (result.timedOut) { stopReason = T.progressJoinTimeout; break; }
+                    const st = result.status;
+                    if (st === 'ok') {
+                        done++;
+                        updateProgress(done, requested);
+                    } else if (st === 'silver') { stopReason = T.progressBalanceLow; break; }
+                    else if (st === 'too_fast') { stopReason = T.progressTooFast; break; }
+                    else if (st === 'banned') { stopReason = T.progressBanned; break; }
+                    else { stopReason = T.progressErrorDetected; break; }
                 } catch (e) {
                     console.error('[IG-BulkTools] error en bulk join:', e);
                     stopReason = T.progressErrorDetected;
@@ -1050,6 +1177,7 @@
                 ? `${stopReason} (${done}/${requested})`
                 : fmt(T.progressDone, { ok: done });
             finalizeProgress(done, requested, finalMsg);
+            resyncBalanceAfterRun();
         }
     }
 
@@ -1113,11 +1241,27 @@
                     const fn = unsafeWindow.joinGiveawayOrAuction;
                     if (typeof fn !== 'function') { stopReason = T.progressTriggerLost; break; }
                     const elForCall = triggerEl || makeFakeAnchor();
+                    // Suscribir ANTES del fn.call para no perder el ajaxComplete.
+                    // Ya no se llama a consumeBalance: el hook actualiza el saldo
+                    // con r.silver_tot autoritativo del servidor.
+                    const joinPromise = awaitNextJoinResponse(CFG.joinResponseTimeoutMs);
                     fn.call(elForCall, elForCall, makeFakeEvent(), gid, fnArg2, token);
-                    success++;
-                    consumeBalance(price);
-                    removeFromQueue(it.gid);
-                    updateProgress(success, total, fmt(T.queueProgressItem, { title: it.title, i: i + 1, n: total }));
+                    const result = await joinPromise;
+                    if (result.timedOut) { stopReason = T.progressJoinTimeout; break; }
+                    const st = result.status;
+                    if (st === 'ok') {
+                        success++;
+                        removeFromQueue(it.gid);
+                        updateProgress(success, total, fmt(T.queueProgressItem, { title: it.title, i: i + 1, n: total }));
+                    } else if (st === 'silver') { stopReason = T.progressBalanceLow; break; }
+                    else if (st === 'too_fast') { stopReason = T.progressTooFast; break; }
+                    else if (st === 'banned') { stopReason = T.progressBanned; break; }
+                    else if (st === 'duplicate' || st === 'limit_reached' || st === 'not_available' || st === 'level' || st === 'owner') {
+                        // Item invalido para este usuario / no joinable: quitarlo
+                        // de la cola y seguir con el siguiente.
+                        removeFromQueue(it.gid);
+                    }
+                    // status === 'server' u otros desconocidos: dejar en cola para reintentar y seguir
                 } catch (e) {
                     console.error('[IG-BulkTools] error en queue join:', it, e);
                     // Continuar con el siguiente item
@@ -1134,6 +1278,7 @@
                 : fmt(T.queueDone, { ok: success, n: total });
             finalizeProgress(success, total, finalMsg);
             renderQueuePanel();
+            resyncBalanceAfterRun();
         }
     }
 
@@ -1318,7 +1463,13 @@
                         return;
                     }
                     // Bloquear encolado cuando no hay GalaSilver disponible.
-                    const bal = getCurrentBalance();
+                    // Si el cache dice 0/null, re-leer DOM y SOBREESCRIBIR (puede
+                    // haber cambiado: top-up, premio, etc.). El usuario esta
+                    // intentando encolar; le damos la cifra mas reciente.
+                    let bal = getCurrentBalance();
+                    if (bal == null || bal <= 0) {
+                        bal = forceReadBalance();
+                    }
                     if (bal == null) { showToast(T.balanceUnknown, 'error'); return; }
                     if (bal <= 0) { showToast(T.queueNoBalance, 'warn'); return; }
                     addToQueue({
@@ -1350,6 +1501,16 @@
     // OBSERVADOR DE DOM (los listados se cargan por AJAX/carrusel)
     // =============================================
     function startObserver() {
+        // jQuery del sitio puede no estar listo en el primer tick; reintentar.
+        setupAjaxBalanceHook();
+        if (!setupAjaxBalanceHook._done) {
+            let attempts = 0;
+            const t = setInterval(() => {
+                attempts++;
+                setupAjaxBalanceHook();
+                if (setupAjaxBalanceHook._done || attempts > 20) clearInterval(t);
+            }, 250);
+        }
         injectAll();
         const observer = new MutationObserver(() => {
             if (startObserver._t) return;
