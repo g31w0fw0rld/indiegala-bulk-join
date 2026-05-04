@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
 // @namespace    http://tampermonkey.net/
-// @version      1.1.1
+// @version      1.1.7
 // @description  Anade dos herramientas a Indiegala Giveaways: (1) compra masiva de boletos en giveaways "Extra Odds" (card y listado); (2) cola de "Single Ticket" desde el listado para entrar a varios giveaways de forma secuencial. Delays humanizados, control de aborto. ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -46,7 +46,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.1.1';
+    const SCRIPT_VERSION = '1.1.7';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
@@ -118,6 +118,8 @@
             progressDone: 'Listo. {ok} boletos comprados.',
             stopBtn: 'Detener',
             closeBtn: 'Cerrar',
+            continueBtn: 'Continuar',
+            continueTooFastWarning: 'El servidor pidió bajar el ritmo (too_fast). Continuar ahora puede aumentar el riesgo de ban. ¿Estás seguro?',
         },
         en: {
             // Bulk join (Extra Odds)
@@ -176,6 +178,8 @@
             progressDone: 'Done. {ok} tickets bought.',
             stopBtn: 'Stop',
             closeBtn: 'Close',
+            continueBtn: 'Continue',
+            continueTooFastWarning: 'Server rate-limited (too_fast). Continuing now may increase ban risk. Are you sure?',
         },
     };
     const T = i18n[userLang] || i18n.en;
@@ -802,7 +806,11 @@
                 color: #ffb3b3;
                 line-height: 1.3;
             }
-            #${PROGRESS_OVERLAY_ID} .ig-prog-actions { margin-top: 10px; }
+            #${PROGRESS_OVERLAY_ID} .ig-prog-actions {
+                margin-top: 10px;
+                display: flex;
+                gap: 6px;
+            }
             #${PROGRESS_OVERLAY_ID} button {
                 padding: 6px 12px;
                 font-size: 12px; font-weight: bold;
@@ -811,6 +819,9 @@
                 background: #c62828; color: #fff;
             }
             #${PROGRESS_OVERLAY_ID} button.ig-prog-close { background: #444; }
+            #${PROGRESS_OVERLAY_ID} button.ig-prog-continue {
+                background: linear-gradient(90deg, #6a1b9a 0%, #ad1457 100%);
+            }
 
             #ig-toast-container {
                 position: fixed;
@@ -1096,74 +1107,125 @@
         if (fill) fill.style.width = Math.min(100, Math.round((done / total) * 100)) + '%';
     }
 
-    function finalizeProgress(done, total, finalMsg) {
+    // Si onContinue es una funcion, se renderiza el boton "Continuar" junto a
+    // "Cerrar". Al pulsarlo, se cierra el overlay actual y se invoca el callback
+    // (puede mostrar su propia confirmacion antes de re-disparar el loop).
+    function finalizeProgress(done, total, finalMsg, onContinue) {
         const overlay = document.getElementById(PROGRESS_OVERLAY_ID);
         if (!overlay) return;
         overlay.querySelector('.ig-prog-status').textContent = finalMsg || fmt(T.progressDone, { ok: done });
         const actions = overlay.querySelector('.ig-prog-actions');
-        actions.innerHTML = `<button class="ig-prog-close">${T.closeBtn}</button>`;
-        actions.querySelector('.ig-prog-close').addEventListener('click', () => overlay.remove());
+        if (typeof onContinue === 'function') {
+            actions.innerHTML = `
+                <button class="ig-prog-close">${T.closeBtn}</button>
+                <button class="ig-prog-continue">${T.continueBtn}</button>
+            `;
+            actions.querySelector('.ig-prog-close').addEventListener('click', () => overlay.remove());
+            actions.querySelector('.ig-prog-continue').addEventListener('click', async () => {
+                overlay.remove();
+                try { await onContinue(); } catch (e) { console.error('[IG-BulkTools] onContinue error:', e); }
+            });
+        } else {
+            actions.innerHTML = `<button class="ig-prog-close">${T.closeBtn}</button>`;
+            actions.querySelector('.ig-prog-close').addEventListener('click', () => overlay.remove());
+        }
+    }
+
+    // Reasons que disparan stop con codigo identificable. Mapea status del
+    // server (silver/too_fast/banned) y condiciones locales a un codigo
+    // interno usado por la logica de "Continuar" (independiente del idioma).
+    // 'banned' nunca permite continuar; 'too_fast' pide confirmacion explicita.
+    function stopReasonFromCode(code) {
+        switch (code) {
+            case 'aborted': return T.progressAborted;
+            case 'balance_low': return T.progressBalanceLow;
+            case 'too_fast': return T.progressTooFast;
+            case 'banned': return T.progressBanned;
+            case 'timeout': return T.progressJoinTimeout;
+            case 'trigger_lost': return T.progressTriggerLost;
+            case 'error': return T.progressErrorDetected;
+            default: return null;
+        }
+    }
+    function isRecoverableStopCode(code) {
+        // 'banned' no es recuperable por politica del servidor; null/undefined
+        // significa que el loop termino limpio (no hay nada que continuar).
+        return code != null && code !== 'banned';
     }
 
     // =============================================
     // LOOP: BULK JOIN (Extra Odds — N veces el mismo gid)
+    // opts.resumeCount: si viene, se omite el modal y se intentan N iteraciones
+    // adicionales (cap a max posible con saldo actual). Lo usa el boton Continuar.
     // =============================================
-    async function runBulkJoin(params, contextLabel) {
+    async function runBulkJoin(params, contextLabel, opts) {
+        opts = opts || {};
         if (running) { showToast(T.alreadyRunning, 'warn'); return; }
 
         const balance = getCurrentBalance();
         if (balance == null) { showToast(T.balanceUnknown, 'error'); return; }
         if (Math.floor(balance / params.price) < 1) { showToast(T.notEnough, 'warn'); return; }
 
-        const requested = await openBulkConfirmModal(params, balance, contextLabel);
-        if (!requested) return;
+        let requested;
+        if (opts.resumeCount && opts.resumeCount > 0) {
+            requested = Math.min(opts.resumeCount, Math.floor(balance / params.price));
+            if (requested < 1) { showToast(T.notEnough, 'warn'); return; }
+        } else {
+            requested = await openBulkConfirmModal(params, balance, contextLabel);
+            if (!requested) return;
+        }
 
         running = true;
         abortFlag = false;
         showProgressOverlay(requested, 'bulk');
 
         let done = 0;
-        let stopReason = null;
+        let stopCode = null;
         try {
             for (let i = 0; i < requested; i++) {
-                if (abortFlag) { stopReason = T.progressAborted; break; }
+                if (abortFlag) { stopCode = 'aborted'; break; }
 
                 if (i > 0 && i % CFG.longPauseEvery === 0) {
                     updateProgress(done, requested, T.progressLongPause);
                     await abortableSleep(rand(CFG.longPauseMinMs, CFG.longPauseMaxMs));
-                    if (abortFlag) { stopReason = T.progressAborted; break; }
+                    if (abortFlag) { stopCode = 'aborted'; break; }
                 }
 
                 const trigger = findTrigger(params);
-                if (!trigger) { stopReason = T.progressTriggerLost; break; }
+                if (!trigger) { stopCode = 'trigger_lost'; break; }
 
-                if (isErrorVisible(trigger)) { stopReason = T.progressErrorDetected; break; }
+                if (isErrorVisible(trigger)) { stopCode = 'error'; break; }
 
                 const balNow = getCurrentBalance();
-                if (balNow != null && balNow < params.price) { stopReason = T.progressBalanceLow; break; }
+                if (balNow != null && balNow < params.price) { stopCode = 'balance_low'; break; }
 
                 try {
                     const fn = unsafeWindow[params.fnName];
-                    if (typeof fn !== 'function') { stopReason = T.progressTriggerLost; break; }
+                    if (typeof fn !== 'function') { stopCode = 'trigger_lost'; break; }
                     // Suscribir ANTES del fn.call para no perder el ajaxComplete
                     // si el sitio responde demasiado rapido. El hook actualiza
                     // currentBalance con r.silver_tot, asi que aqui no se llama
                     // a consumeBalance — duplicaria el decremento.
+                    // Forzar el flag global del sitio: si el trigger no esta en
+                    // el DOM (p.ej. cambiamos de pagina), los callbacks de
+                    // animacion no se ejecutan y el flag queda en false,
+                    // bloqueando todas las siguientes iteraciones.
+                    try { unsafeWindow.joinGiveawayOrAuctionAJS = true; } catch (_) {}
                     const joinPromise = awaitNextJoinResponse(CFG.joinResponseTimeoutMs);
                     fn.call(trigger, trigger, makeFakeEvent(), params.gid, params.fnArg2, params.token);
                     const result = await joinPromise;
-                    if (result.timedOut) { stopReason = T.progressJoinTimeout; break; }
+                    if (result.timedOut) { stopCode = 'timeout'; break; }
                     const st = result.status;
                     if (st === 'ok') {
                         done++;
                         updateProgress(done, requested);
-                    } else if (st === 'silver') { stopReason = T.progressBalanceLow; break; }
-                    else if (st === 'too_fast') { stopReason = T.progressTooFast; break; }
-                    else if (st === 'banned') { stopReason = T.progressBanned; break; }
-                    else { stopReason = T.progressErrorDetected; break; }
+                    } else if (st === 'silver') { stopCode = 'balance_low'; break; }
+                    else if (st === 'too_fast') { stopCode = 'too_fast'; break; }
+                    else if (st === 'banned') { stopCode = 'banned'; break; }
+                    else { stopCode = 'error'; break; }
                 } catch (e) {
                     console.error('[IG-BulkTools] error en bulk join:', e);
-                    stopReason = T.progressErrorDetected;
+                    stopCode = 'error';
                     break;
                 }
 
@@ -1173,23 +1235,45 @@
             }
         } finally {
             running = false;
+            const stopReason = stopReasonFromCode(stopCode);
             const finalMsg = stopReason
                 ? `${stopReason} (${done}/${requested})`
                 : fmt(T.progressDone, { ok: done });
-            finalizeProgress(done, requested, finalMsg);
+
+            // Boton "Continuar": solo si la causa es recuperable y aun queda
+            // trabajo pendiente. Para too_fast pedimos confirmacion explicita
+            // porque continuar pronto eleva el riesgo de ban.
+            const remaining = requested - done;
+            let onContinue = null;
+            if (isRecoverableStopCode(stopCode) && remaining > 0) {
+                const codeAtBreak = stopCode;
+                onContinue = async () => {
+                    if (codeAtBreak === 'too_fast') {
+                        const ok = await showConfirm(T.continueTooFastWarning, T.warningTitle);
+                        if (!ok) return;
+                    }
+                    await runBulkJoin(params, contextLabel, { resumeCount: remaining });
+                };
+            }
+            finalizeProgress(done, requested, finalMsg, onContinue);
             resyncBalanceAfterRun();
         }
     }
 
     // =============================================
     // LOOP: COLA (Single Ticket — N gids distintos, 1 vez cada uno)
+    // opts.skipConfirm: si true, no se muestra el modal de confirmacion
+    // (lo usa el boton Continuar tras un stop recuperable).
     // =============================================
-    async function executeQueue() {
+    async function executeQueue(opts) {
+        opts = opts || {};
         if (running) { showToast(T.alreadyRunning, 'warn'); return; }
         if (!queue.length) return;
 
-        const ok = await openQueueConfirmModal();
-        if (!ok) return;
+        if (!opts.skipConfirm) {
+            const ok = await openQueueConfirmModal();
+            if (!ok) return;
+        }
 
         running = true;
         abortFlag = false;
@@ -1200,18 +1284,18 @@
         showProgressOverlay(total, 'queue');
 
         let success = 0;
-        let stopReason = null;
+        let stopCode = null;
 
         try {
             for (let i = 0; i < items.length; i++) {
-                if (abortFlag) { stopReason = T.progressAborted; break; }
+                if (abortFlag) { stopCode = 'aborted'; break; }
 
                 const it = items[i];
 
                 if (i > 0 && i % CFG.longPauseEvery === 0) {
                     updateProgress(success, total, T.progressLongPause);
                     await abortableSleep(rand(CFG.longPauseMinMs, CFG.longPauseMaxMs));
-                    if (abortFlag) { stopReason = T.progressAborted; break; }
+                    if (abortFlag) { stopCode = 'aborted'; break; }
                 }
 
                 updateProgress(success, total, fmt(T.queueProgressItem, { title: it.title, i: i + 1, n: total }));
@@ -1231,31 +1315,36 @@
                     const liveItem = triggerEl.closest('.items-list-item');
                     const dp = findDataPrice(liveItem || document);
                     if (dp != null) price = dp;
-                    if (isErrorVisible(triggerEl)) { stopReason = T.progressErrorDetected; break; }
+                    if (isErrorVisible(triggerEl)) { stopCode = 'error'; break; }
                 }
 
                 const balNow = getCurrentBalance();
-                if (balNow != null && balNow < price) { stopReason = T.progressBalanceLow; break; }
+                if (balNow != null && balNow < price) { stopCode = 'balance_low'; break; }
 
                 try {
                     const fn = unsafeWindow.joinGiveawayOrAuction;
-                    if (typeof fn !== 'function') { stopReason = T.progressTriggerLost; break; }
+                    if (typeof fn !== 'function') { stopCode = 'trigger_lost'; break; }
                     const elForCall = triggerEl || makeFakeAnchor();
                     // Suscribir ANTES del fn.call para no perder el ajaxComplete.
                     // Ya no se llama a consumeBalance: el hook actualiza el saldo
                     // con r.silver_tot autoritativo del servidor.
+                    // Forzar el flag global del sitio: si la pagina cambio entre
+                    // encolar y ejecutar, el trigger no existe y los callbacks
+                    // de animacion no se ejecutan, dejando el flag en false y
+                    // bloqueando todas las iteraciones siguientes en silencio.
+                    try { unsafeWindow.joinGiveawayOrAuctionAJS = true; } catch (_) {}
                     const joinPromise = awaitNextJoinResponse(CFG.joinResponseTimeoutMs);
                     fn.call(elForCall, elForCall, makeFakeEvent(), gid, fnArg2, token);
                     const result = await joinPromise;
-                    if (result.timedOut) { stopReason = T.progressJoinTimeout; break; }
+                    if (result.timedOut) { stopCode = 'timeout'; break; }
                     const st = result.status;
                     if (st === 'ok') {
                         success++;
                         removeFromQueue(it.gid);
                         updateProgress(success, total, fmt(T.queueProgressItem, { title: it.title, i: i + 1, n: total }));
-                    } else if (st === 'silver') { stopReason = T.progressBalanceLow; break; }
-                    else if (st === 'too_fast') { stopReason = T.progressTooFast; break; }
-                    else if (st === 'banned') { stopReason = T.progressBanned; break; }
+                    } else if (st === 'silver') { stopCode = 'balance_low'; break; }
+                    else if (st === 'too_fast') { stopCode = 'too_fast'; break; }
+                    else if (st === 'banned') { stopCode = 'banned'; break; }
                     else if (st === 'duplicate' || st === 'limit_reached' || st === 'not_available' || st === 'level' || st === 'owner') {
                         // Item invalido para este usuario / no joinable: quitarlo
                         // de la cola y seguir con el siguiente.
@@ -1273,10 +1362,26 @@
             }
         } finally {
             running = false;
+            const stopReason = stopReasonFromCode(stopCode);
             const finalMsg = stopReason
                 ? `${stopReason} (${success}/${total})`
                 : fmt(T.queueDone, { ok: success, n: total });
-            finalizeProgress(success, total, finalMsg);
+
+            // Boton "Continuar": permitido si la causa es recuperable y aun
+            // quedan items en la cola persistida (los procesados con ok ya
+            // fueron eliminados, asi que executeQueue procesara los restantes).
+            let onContinue = null;
+            if (isRecoverableStopCode(stopCode) && queue.length > 0) {
+                const codeAtBreak = stopCode;
+                onContinue = async () => {
+                    if (codeAtBreak === 'too_fast') {
+                        const ok = await showConfirm(T.continueTooFastWarning, T.warningTitle);
+                        if (!ok) return;
+                    }
+                    await executeQueue({ skipConfirm: true });
+                };
+            }
+            finalizeProgress(success, total, finalMsg, onContinue);
             renderQueuePanel();
             resyncBalanceAfterRun();
         }
