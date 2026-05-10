@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
 // @namespace    http://tampermonkey.net/
-// @version      1.1.7
-// @description  Anade dos herramientas a Indiegala Giveaways: (1) compra masiva de boletos en giveaways "Extra Odds" (card y listado); (2) cola de "Single Ticket" desde el listado para entrar a varios giveaways de forma secuencial. Delays humanizados, control de aborto. ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
+// @version      1.1.9
+// @description  Anade a Indiegala Giveaways una cola unificada que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo gid, con count por item) ejecutados secuencialmente. Permite añadir/quitar items mientras la cola corre, valida presupuesto restando lo ya comprometido, y usa un Web Worker timer para que las pausas no se inflen cuando la pestaña esta en background. Delays humanizados, control de aborto, boton Continuar tras stop recuperable. ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
 // @author       g31w0fw0rld
@@ -46,7 +46,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.1.7';
+    const SCRIPT_VERSION = '1.1.9';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
@@ -68,17 +68,26 @@
             bulkBadge: '⚠×{n}',
             bulkBadgeTooltip: '⚠ Riesgo de ban — comprar varios boletos (Extra Odds) automáticamente VIOLA la política de Indiegala y puede banear tu cuenta. Máx {n} con tu saldo.',
             modalTitle: 'Compra masiva de boletos',
+            modalEnqueueTitle: 'Encolar boletos (Extra Odds)',
             modalGiveaway: 'Giveaway',
             modalPrice: 'Precio por boleto',
             modalBalance: 'Saldo GalaSilver',
+            modalAvailable: 'Disponible (saldo − cola)',
+            modalAlreadyQueued: 'Ya en cola',
             modalMax: 'Máximo posible',
             modalCount: 'Cantidad a comprar',
+            modalCountAdd: 'Cantidad a añadir',
             modalTotalCost: 'Costo total',
             modalDelays: 'Espera entre boletos: 2.5–5 s · pausa larga 10–20 s cada 10',
             modalConfirm: 'Iniciar',
+            modalEnqueueConfirm: 'Encolar',
+            modalEnqueueAndRunConfirm: 'Encolar y ejecutar',
             modalCancel: 'Cancelar',
             invalidCount: 'Cantidad inválida (1 a {max}).',
             notEnough: 'No tienes GalaSilver suficiente para comprar al menos 1 boleto.',
+            enqueueCapped: 'Cantidad recortada a {n} (saldo disponible).',
+            enqueueNoBudget: 'Sin saldo disponible (descontando lo ya en cola) para encolar este item.',
+            enqueuedAddedRunning: '{n} boletos añadidos a la cola en curso.',
             // Cola (Single Ticket)
             queueAddBtn: '＋',
             queueAddBtnTooltip: '⚠ Riesgo de ban — añadir este giveaway a la cola para entrar automáticamente. Uso bajo tu propio riesgo.',
@@ -128,17 +137,26 @@
             bulkBadge: '⚠×{n}',
             bulkBadgeTooltip: '⚠ Ban risk — buying multiple tickets (Extra Odds) automatically VIOLATES Indiegala policy and may ban your account. Max {n} with your balance.',
             modalTitle: 'Bulk ticket purchase',
+            modalEnqueueTitle: 'Queue tickets (Extra Odds)',
             modalGiveaway: 'Giveaway',
             modalPrice: 'Price per ticket',
             modalBalance: 'GalaSilver balance',
+            modalAvailable: 'Available (balance − queue)',
+            modalAlreadyQueued: 'Already queued',
             modalMax: 'Max possible',
             modalCount: 'Tickets to buy',
+            modalCountAdd: 'Tickets to add',
             modalTotalCost: 'Total cost',
             modalDelays: 'Wait between tickets: 2.5–5 s · long pause 10–20 s every 10',
             modalConfirm: 'Start',
+            modalEnqueueConfirm: 'Queue',
+            modalEnqueueAndRunConfirm: 'Queue & run',
             modalCancel: 'Cancel',
             invalidCount: 'Invalid amount (1 to {max}).',
             notEnough: 'Not enough GalaSilver to buy at least 1 ticket.',
+            enqueueCapped: 'Capped to {n} (available budget).',
+            enqueueNoBudget: 'No available budget (after subtracting queue) to enqueue this item.',
+            enqueuedAddedRunning: '{n} tickets added to the running queue.',
             // Queue (Single Ticket)
             queueAddBtn: '＋',
             queueAddBtnTooltip: '⚠ Ban risk — add this giveaway to the queue for automatic entry. Use at your own risk.',
@@ -220,15 +238,44 @@
     // =============================================
     // STORAGE (persistencia de la cola)
     // =============================================
+    // Normaliza items persistidos antes de v1.2 (sin count/done/fnName/type)
+    // al nuevo schema unificado:
+    //   { gid, title, timeLeft, fnName, price, fnArg2, token,
+    //     count, done, type, addedAt }
+    // count = total de boletos pedidos para ese gid (1 para singles, N para
+    // extra odds). done = cuantos joins exitosos lleva en este item.
+    function normalizeQueueItem(it) {
+        if (!it || typeof it !== 'object') return null;
+        const count = (typeof it.count === 'number' && it.count > 0) ? it.count : 1;
+        const done = (typeof it.done === 'number' && it.done >= 0) ? it.done : 0;
+        return {
+            gid: it.gid,
+            title: it.title || ('#' + it.gid),
+            timeLeft: it.timeLeft || '',
+            fnName: it.fnName || 'joinGiveawayOrAuction',
+            price: it.price || 0,
+            fnArg2: (it.fnArg2 != null) ? it.fnArg2 : it.price,
+            token: it.token,
+            count,
+            done: Math.min(done, count),
+            type: it.type || (count > 1 ? 'bulk' : 'single'),
+            addedAt: it.addedAt || Date.now(),
+        };
+    }
     function loadQueue() {
         try {
+            let raw = null;
             if (typeof GM_getValue !== 'undefined') {
                 const v = GM_getValue(STORAGE_KEY, null);
-                if (Array.isArray(v)) return v;
-                if (typeof v === 'string') return JSON.parse(v) || [];
+                if (Array.isArray(v)) raw = v;
+                else if (typeof v === 'string') { try { raw = JSON.parse(v); } catch (_) { raw = null; } }
             }
-            const raw = localStorage.getItem(STORAGE_KEY);
-            return raw ? JSON.parse(raw) : [];
+            if (!Array.isArray(raw)) {
+                const s = localStorage.getItem(STORAGE_KEY);
+                raw = s ? JSON.parse(s) : [];
+            }
+            if (!Array.isArray(raw)) raw = [];
+            return raw.map(normalizeQueueItem).filter(Boolean);
         } catch (e) {
             console.error('[IG-BulkTools] loadQueue error:', e);
             return [];
@@ -248,16 +295,73 @@
     // UTILIDADES
     // =============================================
     const rand = (min, max) => Math.floor(min + Math.random() * (max - min));
-    const sleep = (ms) => new Promise(res => setTimeout(res, ms));
 
-    // Sleep que reacciona a abortFlag cada 100ms
+    // -------- Web Worker timer --------
+    // Pestañas en background sufren intensive throttling: setTimeout en el hilo
+    // principal se difiere a ~1/min tras unos minutos oculta. Para que las
+    // pausas entre joins se respeten aunque la pestaña no este activa, los
+    // timers viven en un Worker (los workers no se throttlean igual). Si por
+    // CSP u otra razon no se puede crear el worker, hay fallback a setTimeout.
+    const TIMER_WORKER_SRC = `
+        self.addEventListener('message', function (e) {
+            var d = e.data || {};
+            if (d.cancel) return;
+            setTimeout(function () { self.postMessage({ id: d.id }); }, d.ms);
+        });
+    `;
+    let _timerWorker = null;
+    const _timerCallbacks = new Map();
+    function _getTimerWorker() {
+        if (_timerWorker !== null) return _timerWorker || null;
+        try {
+            const blob = new Blob([TIMER_WORKER_SRC], { type: 'application/javascript' });
+            const w = new Worker(URL.createObjectURL(blob));
+            w.addEventListener('message', (e) => {
+                const id = e.data && e.data.id;
+                const cb = _timerCallbacks.get(id);
+                if (cb) { _timerCallbacks.delete(id); cb(); }
+            });
+            _timerWorker = w;
+        } catch (e) {
+            console.warn('[IG-BulkTools] Worker timer no disponible, fallback a setTimeout:', e);
+            _timerWorker = false;
+        }
+        return _timerWorker || null;
+    }
+    let _timerSeq = 0;
+    function workerSleep(ms) {
+        const w = _getTimerWorker();
+        if (!w) return new Promise(res => setTimeout(res, ms));
+        return new Promise(res => {
+            const id = ++_timerSeq;
+            _timerCallbacks.set(id, res);
+            w.postMessage({ id, ms });
+        });
+    }
+
+    const sleep = (ms) => workerSleep(ms);
+
+    // -------- Señal de aborto --------
+    // setAbort despierta todas las esperas pendientes, lo que convierte
+    // abortableSleep(N) en un solo timer + race contra la señal en lugar de
+    // hacer polling cada 100 ms (que en background se inflaba a minutos por
+    // pausa).
+    const _abortResolvers = new Set();
+    function setAbort() {
+        abortFlag = true;
+        const rs = Array.from(_abortResolvers);
+        _abortResolvers.clear();
+        rs.forEach(r => { try { r(); } catch (_) {} });
+    }
+    function clearAbort() { abortFlag = false; _abortResolvers.clear(); }
     async function abortableSleep(ms) {
-        const step = 100;
-        let elapsed = 0;
-        while (elapsed < ms) {
-            if (abortFlag) return;
-            await sleep(Math.min(step, ms - elapsed));
-            elapsed += step;
+        if (abortFlag) return;
+        let abortRes;
+        const aborted = new Promise(res => { abortRes = res; _abortResolvers.add(abortRes); });
+        try {
+            await Promise.race([workerSleep(ms), aborted]);
+        } finally {
+            _abortResolvers.delete(abortRes);
         }
     }
 
@@ -455,14 +559,16 @@
     }
 
     // Recalcula el "maximo posible" mostrado en cada badge de Extra Odds visible.
+    // Toma saldo disponible (saldo - lo ya comprometido en la cola), no el saldo
+    // crudo, para que el numero refleje cuanto se puede AÑADIR de verdad.
     function refreshBulkBadges() {
-        const bal = currentBalance;
         document.querySelectorAll('.' + BULK_BADGE_CLASS).forEach(badge => {
             const price = parseInt(badge.dataset.price, 10);
             if (isNaN(price) || price < 1) return;
-            const max = bal != null ? Math.floor(bal / price) : 0;
-            badge.textContent = fmt(T.bulkBadge, { n: max });
-            badge.title = fmt(T.bulkBadgeTooltip, { n: max });
+            const max = maxEnqueueCount(price);
+            const n = max == null ? 0 : max;
+            badge.textContent = fmt(T.bulkBadge, { n });
+            badge.title = fmt(T.bulkBadgeTooltip, { n });
         });
     }
 
@@ -550,24 +656,67 @@
     // OPERACIONES DE COLA
     // =============================================
     function isInQueue(gid) { return queue.some(q => q.gid === gid); }
+    function findQueueItem(gid) { return queue.find(q => q.gid === gid) || null; }
+
+    // Pendientes (boletos por joinar) en un item, o en toda la cola.
+    function itemPending(it) { return Math.max(0, (it.count || 0) - (it.done || 0)); }
+    function pendingQueueCost() {
+        return queue.reduce((s, q) => s + itemPending(q) * (q.price || 0), 0);
+    }
+    // Saldo disponible despues de descontar lo ya comprometido en la cola.
+    function availableForEnqueue() {
+        const bal = getCurrentBalance();
+        if (bal == null) return null;
+        return bal - pendingQueueCost();
+    }
+    // Maximo a encolar para un item del precio dado, dado el presupuesto.
+    function maxEnqueueCount(price) {
+        const avail = availableForEnqueue();
+        if (avail == null) return null;
+        if (!price || price <= 0) return 0;
+        return Math.max(0, Math.floor(avail / price));
+    }
+
+    // Agrega o suma a un item existente. Devuelve el item resultante en la cola.
+    // Si el gid ya existia, se suma `count` al pendiente respetando type/fnName del nuevo
+    // y refrescando token/fnArg2/price (mas frescos del DOM).
     function addToQueue(item) {
-        if (isInQueue(item.gid)) return;
-        queue.push(item);
+        const norm = normalizeQueueItem(item);
+        if (!norm) return null;
+        const existing = findQueueItem(norm.gid);
+        if (existing) {
+            existing.count += norm.count;
+            existing.token = norm.token || existing.token;
+            existing.fnArg2 = (norm.fnArg2 != null) ? norm.fnArg2 : existing.fnArg2;
+            if (norm.price) existing.price = norm.price;
+            if (norm.fnName) existing.fnName = norm.fnName;
+            if (existing.count > 1) existing.type = 'bulk';
+            saveQueue();
+            renderQueuePanel();
+            refreshQueueButtonsState();
+            refreshBulkBadges();
+            return existing;
+        }
+        queue.push(norm);
         saveQueue();
         renderQueuePanel();
         refreshQueueButtonsState();
+        refreshBulkBadges();
+        return norm;
     }
     function removeFromQueue(gid) {
         queue = queue.filter(q => q.gid !== gid);
         saveQueue();
         renderQueuePanel();
         refreshQueueButtonsState();
+        refreshBulkBadges();
     }
     function clearQueue() {
         queue = [];
         saveQueue();
         renderQueuePanel();
         refreshQueueButtonsState();
+        refreshBulkBadges();
     }
 
     // =============================================
@@ -694,6 +843,18 @@
                 color: #fff;
             }
             #${PANEL_ID} .ig-q-it-price { color: #ff7da6; font-weight: bold; }
+            #${PANEL_ID} .ig-q-it-count {
+                color: #fff;
+                background: linear-gradient(135deg, #6a1b9a 0%, #ad1457 100%);
+                padding: 2px 6px;
+                border-radius: 10px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            #${PANEL_ID} .ig-q-li-active {
+                background: rgba(106, 27, 154, 0.18);
+                border-left: 3px solid #ff7da6;
+            }
             #${PANEL_ID} .ig-q-it-rem {
                 width: 22px; height: 22px;
                 border: none; border-radius: 50%;
@@ -959,16 +1120,31 @@
     }
 
     // =============================================
-    // MODAL: BULK JOIN (Extra Odds)
+    // MODAL: ENCOLAR BOLETOS (Extra Odds → cola unificada)
     // =============================================
-    function openBulkConfirmModal(params, balance, contextLabel) {
+    // Devuelve la cantidad solicitada (>=1) o null si se canceló.
+    // Auto-cap: si el usuario tipea > max, al confirmar se recorta silencioso a
+    // max y se muestra un toast. Si max=0 (sin presupuesto), devuelve null.
+    function openEnqueueCountModal(params, contextLabel, opts) {
+        opts = opts || {};
+        const isRunning = !!opts.isRunning;
         return new Promise((resolve) => {
-            const maxCount = Math.floor(balance / params.price);
+            const balance = getCurrentBalance();
+            const existing = findQueueItem(params.gid);
+            const alreadyPending = existing ? itemPending(existing) : 0;
+            const maxAdd = maxEnqueueCount(params.price);
+            if (balance == null) { showToast(T.balanceUnknown, 'error'); resolve(null); return; }
+            if (maxAdd == null || maxAdd < 1) { showToast(T.enqueueNoBudget, 'warn'); resolve(null); return; }
+
+            const confirmLabel = isRunning ? T.modalEnqueueConfirm : T.modalEnqueueAndRunConfirm;
+            const available = availableForEnqueue();
+            const defaultVal = Math.min(maxAdd, Math.max(1, opts.suggested || maxAdd));
+
             const backdrop = document.createElement('div');
             backdrop.id = MODAL_ID + '-backdrop';
             backdrop.innerHTML = `
                 <div id="${MODAL_ID}">
-                    <h3>${T.modalTitle}</h3>
+                    <h3>${T.modalEnqueueTitle}</h3>
                     <div class="ig-warning">
                         <b>${T.warningTitle}</b>
                         ${T.warningBody}
@@ -977,15 +1153,17 @@
                     <div class="ig-row"><b>${T.modalGiveaway}</b><span>${escapeHtml(contextLabel)}</span></div>
                     <div class="ig-row"><b>${T.modalPrice}</b><span>${params.price} iS</span></div>
                     <div class="ig-row"><b>${T.modalBalance}</b><span>${balance} iS</span></div>
-                    <div class="ig-row"><b>${T.modalMax}</b><span>${maxCount}</span></div>
-                    <label style="display:block;margin-top:10px;font-size:12px;color:#555">${T.modalCount}:</label>
-                    <input type="number" id="ig-bulk-count" min="1" max="${maxCount}" value="${maxCount}">
+                    <div class="ig-row"><b>${T.modalAvailable}</b><span>${available} iS</span></div>
+                    ${alreadyPending > 0 ? `<div class="ig-row"><b>${T.modalAlreadyQueued}</b><span>${alreadyPending}</span></div>` : ''}
+                    <div class="ig-row"><b>${T.modalMax}</b><span>${maxAdd}</span></div>
+                    <label style="display:block;margin-top:10px;font-size:12px;color:#555">${T.modalCountAdd}:</label>
+                    <input type="number" id="ig-bulk-count" min="1" max="${maxAdd}" value="${defaultVal}">
                     <div class="ig-inline-error" id="ig-bulk-error"></div>
-                    <div class="ig-row"><b>${T.modalTotalCost}</b><span id="ig-bulk-total">${maxCount * params.price} iS</span></div>
+                    <div class="ig-row"><b>${T.modalTotalCost}</b><span id="ig-bulk-total">${defaultVal * params.price} iS</span></div>
                     <div class="ig-note">${T.modalDelays}</div>
                     <div class="ig-actions">
                         <button class="ig-cancel">${T.modalCancel}</button>
-                        <button class="ig-confirm">${T.modalConfirm}</button>
+                        <button class="ig-confirm">${confirmLabel}</button>
                     </div>
                 </div>
             `;
@@ -1006,13 +1184,17 @@
             const close = (val) => { backdrop.remove(); resolve(val); };
             backdrop.querySelector('.ig-cancel').addEventListener('click', () => close(null));
             backdrop.querySelector('.ig-confirm').addEventListener('click', () => {
-                const v = parseInt(input.value, 10);
-                if (isNaN(v) || v < 1 || v > maxCount) {
-                    errorEl.textContent = fmt(T.invalidCount, { max: maxCount });
+                let v = parseInt(input.value, 10);
+                if (isNaN(v) || v < 1) {
+                    errorEl.textContent = fmt(T.invalidCount, { max: maxAdd });
                     errorEl.classList.add('ig-visible');
                     input.focus();
                     input.select();
                     return;
+                }
+                if (v > maxAdd) {
+                    showToast(fmt(T.enqueueCapped, { n: maxAdd }), 'warn');
+                    v = maxAdd;
                 }
                 close(v);
             });
@@ -1027,13 +1209,14 @@
     }
 
     // =============================================
-    // MODAL: COLA (Single Ticket)
+    // MODAL: COLA (Single Ticket + Extra Odds unificados)
     // =============================================
     function openQueueConfirmModal() {
         return new Promise((resolve) => {
             const balance = getCurrentBalance();
             if (balance == null) { showToast(T.balanceUnknown, 'error'); resolve(false); return; }
-            const totalCost = queue.reduce((s, q) => s + (q.price || 0), 0);
+            const totalTickets = queue.reduce((s, q) => s + itemPending(q), 0);
+            const totalCost = pendingQueueCost();
 
             const backdrop = document.createElement('div');
             backdrop.id = MODAL_ID + '-backdrop';
@@ -1045,7 +1228,7 @@
                         ${T.warningBody}
                         <div style="margin-top:6px"><a href="https://docs.indiegala.com/giveaways_auctions_trades/spam.html" target="_blank" rel="noopener">${T.warningPolicyLink}</a></div>
                     </div>
-                    <div class="ig-row"><b>${T.queueModalCount}</b><span>${queue.length}</span></div>
+                    <div class="ig-row"><b>${T.queueModalCount}</b><span>${totalTickets}</span></div>
                     <div class="ig-row"><b>${T.modalTotalCost}</b><span>${totalCost} iS</span></div>
                     <div class="ig-row"><b>${T.modalBalance}</b><span>${balance} iS</span></div>
                     <div class="ig-note">${T.modalDelays}</div>
@@ -1097,7 +1280,7 @@
             <div class="ig-prog-actions"><button id="ig-prog-stop">${T.stopBtn}</button></div>
         `;
         document.body.appendChild(overlay);
-        document.getElementById('ig-prog-stop').addEventListener('click', () => { abortFlag = true; });
+        document.getElementById('ig-prog-stop').addEventListener('click', () => { setAbort(); });
     }
 
     function updateProgress(done, total, statusText) {
@@ -1154,116 +1337,18 @@
     }
 
     // =============================================
-    // LOOP: BULK JOIN (Extra Odds — N veces el mismo gid)
-    // opts.resumeCount: si viene, se omite el modal y se intentan N iteraciones
-    // adicionales (cap a max posible con saldo actual). Lo usa el boton Continuar.
-    // =============================================
-    async function runBulkJoin(params, contextLabel, opts) {
-        opts = opts || {};
-        if (running) { showToast(T.alreadyRunning, 'warn'); return; }
-
-        const balance = getCurrentBalance();
-        if (balance == null) { showToast(T.balanceUnknown, 'error'); return; }
-        if (Math.floor(balance / params.price) < 1) { showToast(T.notEnough, 'warn'); return; }
-
-        let requested;
-        if (opts.resumeCount && opts.resumeCount > 0) {
-            requested = Math.min(opts.resumeCount, Math.floor(balance / params.price));
-            if (requested < 1) { showToast(T.notEnough, 'warn'); return; }
-        } else {
-            requested = await openBulkConfirmModal(params, balance, contextLabel);
-            if (!requested) return;
-        }
-
-        running = true;
-        abortFlag = false;
-        showProgressOverlay(requested, 'bulk');
-
-        let done = 0;
-        let stopCode = null;
-        try {
-            for (let i = 0; i < requested; i++) {
-                if (abortFlag) { stopCode = 'aborted'; break; }
-
-                if (i > 0 && i % CFG.longPauseEvery === 0) {
-                    updateProgress(done, requested, T.progressLongPause);
-                    await abortableSleep(rand(CFG.longPauseMinMs, CFG.longPauseMaxMs));
-                    if (abortFlag) { stopCode = 'aborted'; break; }
-                }
-
-                const trigger = findTrigger(params);
-                if (!trigger) { stopCode = 'trigger_lost'; break; }
-
-                if (isErrorVisible(trigger)) { stopCode = 'error'; break; }
-
-                const balNow = getCurrentBalance();
-                if (balNow != null && balNow < params.price) { stopCode = 'balance_low'; break; }
-
-                try {
-                    const fn = unsafeWindow[params.fnName];
-                    if (typeof fn !== 'function') { stopCode = 'trigger_lost'; break; }
-                    // Suscribir ANTES del fn.call para no perder el ajaxComplete
-                    // si el sitio responde demasiado rapido. El hook actualiza
-                    // currentBalance con r.silver_tot, asi que aqui no se llama
-                    // a consumeBalance — duplicaria el decremento.
-                    // Forzar el flag global del sitio: si el trigger no esta en
-                    // el DOM (p.ej. cambiamos de pagina), los callbacks de
-                    // animacion no se ejecutan y el flag queda en false,
-                    // bloqueando todas las siguientes iteraciones.
-                    try { unsafeWindow.joinGiveawayOrAuctionAJS = true; } catch (_) {}
-                    const joinPromise = awaitNextJoinResponse(CFG.joinResponseTimeoutMs);
-                    fn.call(trigger, trigger, makeFakeEvent(), params.gid, params.fnArg2, params.token);
-                    const result = await joinPromise;
-                    if (result.timedOut) { stopCode = 'timeout'; break; }
-                    const st = result.status;
-                    if (st === 'ok') {
-                        done++;
-                        updateProgress(done, requested);
-                    } else if (st === 'silver') { stopCode = 'balance_low'; break; }
-                    else if (st === 'too_fast') { stopCode = 'too_fast'; break; }
-                    else if (st === 'banned') { stopCode = 'banned'; break; }
-                    else { stopCode = 'error'; break; }
-                } catch (e) {
-                    console.error('[IG-BulkTools] error en bulk join:', e);
-                    stopCode = 'error';
-                    break;
-                }
-
-                if (i < requested - 1) {
-                    await abortableSleep(rand(CFG.minDelayMs, CFG.maxDelayMs));
-                }
-            }
-        } finally {
-            running = false;
-            const stopReason = stopReasonFromCode(stopCode);
-            const finalMsg = stopReason
-                ? `${stopReason} (${done}/${requested})`
-                : fmt(T.progressDone, { ok: done });
-
-            // Boton "Continuar": solo si la causa es recuperable y aun queda
-            // trabajo pendiente. Para too_fast pedimos confirmacion explicita
-            // porque continuar pronto eleva el riesgo de ban.
-            const remaining = requested - done;
-            let onContinue = null;
-            if (isRecoverableStopCode(stopCode) && remaining > 0) {
-                const codeAtBreak = stopCode;
-                onContinue = async () => {
-                    if (codeAtBreak === 'too_fast') {
-                        const ok = await showConfirm(T.continueTooFastWarning, T.warningTitle);
-                        if (!ok) return;
-                    }
-                    await runBulkJoin(params, contextLabel, { resumeCount: remaining });
-                };
-            }
-            finalizeProgress(done, requested, finalMsg, onContinue);
-            resyncBalanceAfterRun();
-        }
-    }
-
-    // =============================================
-    // LOOP: COLA (Single Ticket — N gids distintos, 1 vez cada uno)
-    // opts.skipConfirm: si true, no se muestra el modal de confirmacion
-    // (lo usa el boton Continuar tras un stop recuperable).
+    // LOOP: COLA UNIFICADA (singles + extra odds, count por item)
+    // opts.skipConfirm: omite el modal (lo usa Continuar tras stop recuperable
+    // y tambien el "Encolar y ejecutar" del badge de Extra Odds).
+    //
+    // El loop lee `queue` directo en cada iteracion (NO snapshot), asi que el
+    // usuario puede:
+    //   - Encolar items mientras corre (＋ singles, badge bulk): el loop los ve
+    //     en la siguiente iteracion.
+    //   - Quitar items con × en el panel: si el item en curso es eliminado, el
+    //     join en vuelo termina (ya viajo) y el loop salta al siguiente.
+    //   - Vaciar la cola: el loop sale limpio porque queue.find no encuentra
+    //     pendientes.
     // =============================================
     async function executeQueue(opts) {
         opts = opts || {};
@@ -1276,41 +1361,54 @@
         }
 
         running = true;
-        abortFlag = false;
+        clearAbort();
         renderQueuePanel();
 
-        const items = queue.slice();
-        const total = items.length;
-        showProgressOverlay(total, 'queue');
+        // Total inicial visible en el progreso. Se recalcula cada tick
+        // sumando success ya hechos + pendientes vivos en la cola, asi que
+        // crece si el usuario añade y se encoge si quita (UI honesta).
+        const initialTotal = queue.reduce((s, q) => s + itemPending(q), 0);
+        showProgressOverlay(initialTotal, 'queue');
 
-        let success = 0;
+        let success = 0;        // joins ok totales en esta corrida
+        let iteration = 0;       // tick global (para longPause cada N)
         let stopCode = null;
 
         try {
-            for (let i = 0; i < items.length; i++) {
+            while (true) {
                 if (abortFlag) { stopCode = 'aborted'; break; }
+                // Toma el primer item con count>done. queue es la fuente viva.
+                const it = queue.find(q => itemPending(q) > 0);
+                if (!it) break;
 
-                const it = items[i];
+                const remainingNow = queue.reduce((s, q) => s + itemPending(q), 0);
+                const totalForBar = success + remainingNow;
 
-                if (i > 0 && i % CFG.longPauseEvery === 0) {
-                    updateProgress(success, total, T.progressLongPause);
+                if (iteration > 0 && iteration % CFG.longPauseEvery === 0) {
+                    updateProgress(success, totalForBar, T.progressLongPause);
                     await abortableSleep(rand(CFG.longPauseMinMs, CFG.longPauseMaxMs));
                     if (abortFlag) { stopCode = 'aborted'; break; }
                 }
 
-                updateProgress(success, total, fmt(T.queueProgressItem, { title: it.title, i: i + 1, n: total }));
+                const fnName = it.fnName || 'joinGiveawayOrAuction';
+                const itemLabel = (it.count || 1) > 1
+                    ? `${it.title} [${(it.done || 0) + 1}/${it.count}]`
+                    : it.title;
+                updateProgress(success, totalForBar, fmt(T.queueProgressItem, {
+                    title: itemLabel,
+                    i: success + 1,
+                    n: totalForBar,
+                }));
 
-                // Refrescar token, fnArg2 y price desde el DOM si el card sigue visible.
-                // Si el item de la cola es viejo (sin fnArg2 guardado), caer al precio
-                // como fallback (compatibilidad hacia atras con colas persistidas antes
-                // de separar fnArg2/price).
+                // Refrescar token, fnArg2 y price desde el DOM si el trigger
+                // sigue visible (la pagina puede haber renovado el token).
                 let gid = it.gid;
                 let price = it.price;
                 let token = it.token;
                 let fnArg2 = (it.fnArg2 != null) ? it.fnArg2 : it.price;
-                let triggerEl = findTrigger({ gid: it.gid, fnName: 'joinGiveawayOrAuction' });
+                let triggerEl = findTrigger({ gid: it.gid, fnName });
                 if (triggerEl) {
-                    const live = parseJoinOnclick(triggerEl, 'joinGiveawayOrAuction');
+                    const live = parseJoinOnclick(triggerEl, fnName);
                     if (live) { gid = live.gid; token = live.token; fnArg2 = live.fnArg2; }
                     const liveItem = triggerEl.closest('.items-list-item');
                     const dp = findDataPrice(liveItem || document);
@@ -1322,16 +1420,21 @@
                 if (balNow != null && balNow < price) { stopCode = 'balance_low'; break; }
 
                 try {
-                    const fn = unsafeWindow.joinGiveawayOrAuction;
+                    // Resolver dinamicamente la fn segun el item. Para extra odds
+                    // encolados desde el card detail, fnName='joinGiveawayCard'.
+                    // Si el sitio no tiene esa fn definida en este contexto
+                    // (estamos en /giveaways y no en /giveaways/card/X), caemos a
+                    // joinGiveawayOrAuction como fallback compatible — ambas
+                    // hablan con /giveaways/join.
+                    let fn = unsafeWindow[fnName];
+                    if (typeof fn !== 'function') fn = unsafeWindow.joinGiveawayOrAuction;
                     if (typeof fn !== 'function') { stopCode = 'trigger_lost'; break; }
                     const elForCall = triggerEl || makeFakeAnchor();
                     // Suscribir ANTES del fn.call para no perder el ajaxComplete.
-                    // Ya no se llama a consumeBalance: el hook actualiza el saldo
-                    // con r.silver_tot autoritativo del servidor.
-                    // Forzar el flag global del sitio: si la pagina cambio entre
-                    // encolar y ejecutar, el trigger no existe y los callbacks
-                    // de animacion no se ejecutan, dejando el flag en false y
-                    // bloqueando todas las iteraciones siguientes en silencio.
+                    // Forzar el flag global del sitio: si el trigger no esta en
+                    // el DOM (paginacion / cambio de vista), los callbacks de
+                    // animacion no se ejecutan y el flag queda en false,
+                    // bloqueando las siguientes iteraciones en silencio.
                     try { unsafeWindow.joinGiveawayOrAuctionAJS = true; } catch (_) {}
                     const joinPromise = awaitNextJoinResponse(CFG.joinResponseTimeoutMs);
                     fn.call(elForCall, elForCall, makeFakeEvent(), gid, fnArg2, token);
@@ -1340,38 +1443,68 @@
                     const st = result.status;
                     if (st === 'ok') {
                         success++;
-                        removeFromQueue(it.gid);
-                        updateProgress(success, total, fmt(T.queueProgressItem, { title: it.title, i: i + 1, n: total }));
+                        // El item puede haber sido removido por el usuario
+                        // mientras esperabamos la respuesta. Re-verificar.
+                        const live = findQueueItem(it.gid);
+                        if (live) {
+                            live.done = (live.done || 0) + 1;
+                            if (live.done >= live.count) {
+                                removeFromQueue(live.gid);
+                            } else {
+                                saveQueue();
+                                renderQueuePanel();
+                                refreshBulkBadges();
+                            }
+                        }
+                        const newRem = queue.reduce((s, q) => s + itemPending(q), 0);
+                        updateProgress(success, success + newRem, fmt(T.queueProgressItem, {
+                            title: itemLabel,
+                            i: success,
+                            n: success + newRem,
+                        }));
                     } else if (st === 'silver') { stopCode = 'balance_low'; break; }
                     else if (st === 'too_fast') { stopCode = 'too_fast'; break; }
                     else if (st === 'banned') { stopCode = 'banned'; break; }
                     else if (st === 'duplicate' || st === 'limit_reached' || st === 'not_available' || st === 'level' || st === 'owner') {
                         // Item invalido para este usuario / no joinable: quitarlo
-                        // de la cola y seguir con el siguiente.
+                        // entero (no tiene sentido reintentar las restantes
+                        // copias del mismo gid) y seguir con el siguiente.
                         removeFromQueue(it.gid);
                     }
-                    // status === 'server' u otros desconocidos: dejar en cola para reintentar y seguir
+                    // status === 'server' u otros desconocidos: dejar item con
+                    // su pendiente intacto, romper para que el usuario decida
+                    // (Continuar / Cerrar) — evita loop infinito si el server
+                    // responde algo raro en bucle.
+                    else if (st != null && st !== 'ok') {
+                        stopCode = 'error';
+                        break;
+                    }
                 } catch (e) {
                     console.error('[IG-BulkTools] error en queue join:', it, e);
-                    // Continuar con el siguiente item
+                    stopCode = 'error';
+                    break;
                 }
 
-                if (i < items.length - 1) {
+                iteration++;
+                // Sleep entre joins solo si hay mas trabajo pendiente vivo.
+                const moreLeft = queue.some(q => itemPending(q) > 0);
+                if (moreLeft) {
                     await abortableSleep(rand(CFG.minDelayMs, CFG.maxDelayMs));
                 }
             }
         } finally {
             running = false;
+            const finalRem = queue.reduce((s, q) => s + itemPending(q), 0);
+            const finalTotal = success + finalRem;
             const stopReason = stopReasonFromCode(stopCode);
             const finalMsg = stopReason
-                ? `${stopReason} (${success}/${total})`
-                : fmt(T.queueDone, { ok: success, n: total });
+                ? `${stopReason} (${success}/${finalTotal})`
+                : fmt(T.queueDone, { ok: success, n: finalTotal });
 
             // Boton "Continuar": permitido si la causa es recuperable y aun
-            // quedan items en la cola persistida (los procesados con ok ya
-            // fueron eliminados, asi que executeQueue procesara los restantes).
+            // queda algun pendiente en la cola viva.
             let onContinue = null;
-            if (isRecoverableStopCode(stopCode) && queue.length > 0) {
+            if (isRecoverableStopCode(stopCode) && finalRem > 0) {
                 const codeAtBreak = stopCode;
                 onContinue = async () => {
                     if (codeAtBreak === 'too_fast') {
@@ -1381,7 +1514,7 @@
                     await executeQueue({ skipConfirm: true });
                 };
             }
-            finalizeProgress(success, total, finalMsg, onContinue);
+            finalizeProgress(success, Math.max(1, finalTotal), finalMsg, onContinue);
             renderQueuePanel();
             resyncBalanceAfterRun();
         }
@@ -1411,18 +1544,29 @@
             return;
         }
         panel.style.display = '';
-        const totalCost = queue.reduce((s, q) => s + (q.price || 0), 0);
-        const items = queue.map(q => `
-            <li>
-                <span class="ig-q-it-title" title="${escapeHtml(q.title)} — ${escapeHtml(q.timeLeft || '')}">${escapeHtml(q.title)}</span>
-                <span class="ig-q-it-price">${q.price} iS</span>
-                <button class="ig-q-it-rem" data-gid="${escapeHtml(q.gid)}" title="${T.queueRemoveBtnTooltip}">×</button>
-            </li>
-        `).join('');
+        const totalTickets = queue.reduce((s, q) => s + itemPending(q), 0);
+        const totalCost = pendingQueueCost();
+        // El primer item con pendientes es el "en curso" si running=true.
+        const activeGid = running ? (queue.find(q => itemPending(q) > 0) || {}).gid : null;
+        const items = queue.map(q => {
+            const pending = itemPending(q);
+            const totalForRow = pending * (q.price || 0);
+            const multi = (q.count || 1) > 1;
+            const countLabel = multi ? `<span class="ig-q-it-count" title="${q.done || 0}/${q.count}">×${pending}</span>` : '';
+            const isActive = q.gid === activeGid;
+            return `
+                <li class="${isActive ? 'ig-q-li-active' : ''}">
+                    <span class="ig-q-it-title" title="${escapeHtml(q.title)} — ${escapeHtml(q.timeLeft || '')}">${escapeHtml(q.title)}</span>
+                    ${countLabel}
+                    <span class="ig-q-it-price">${totalForRow} iS</span>
+                    <button class="ig-q-it-rem" data-gid="${escapeHtml(q.gid)}" title="${T.queueRemoveBtnTooltip}">×</button>
+                </li>
+            `;
+        }).join('');
         panel.innerHTML = `
             <div class="ig-q-warning-bar">${T.warningProgressQueue}</div>
             <h4>${T.queuePanelTitle}</h4>
-            <div class="ig-q-summary">${fmt(T.queueTotalCost, { n: queue.length, cost: totalCost })}</div>
+            <div class="ig-q-summary">${fmt(T.queueTotalCost, { n: totalTickets, cost: totalCost })}</div>
             <ul class="ig-q-list">${items}</ul>
             <div class="ig-q-actions">
                 <button id="ig-q-clear">${T.queueClearBtn}</button>
@@ -1443,13 +1587,15 @@
     }
 
     function refreshQueueButtonsState() {
-        const bal = currentBalance; // saldo crudo (no fuerza lectura DOM aqui)
+        // "Disponible" para singles = saldo - cola pendiente. Si <=0 marcamos
+        // el ＋ como deshabilitado (no se puede agregar otro single sin
+        // exceder el presupuesto comprometido).
+        const avail = availableForEnqueue();
         document.querySelectorAll('.' + QBTN_CLASS).forEach(btn => {
             const gid = btn.dataset.gid;
+            const price = parseInt(btn.dataset.price, 10);
             const inQ = isInQueue(gid);
-            // Solo se "deshabilita" visualmente para AÑADIR; los items ya en cola
-            // siempre permiten quitarse aunque el saldo sea 0.
-            const noBalance = !inQ && bal != null && bal <= 0;
+            const noBalance = !inQ && avail != null && (!isNaN(price) ? avail < price : avail <= 0);
             btn.classList.toggle('ig-q-btn-active', inQ);
             btn.classList.toggle('ig-q-btn-disabled', noBalance);
             btn.textContent = inQ ? T.queueRemoveBtn : T.queueAddBtn;
@@ -1457,6 +1603,38 @@
                 ? T.queueRemoveBtnTooltip
                 : (noBalance ? T.queueNoBalanceTooltip : T.queueAddBtnTooltip);
         });
+    }
+
+    // =============================================
+    // ENCOLAR EXTRA ODDS (badge / card detail)
+    // =============================================
+    // Abre el modal de cantidad, encola N copias del gid, y si la cola no
+    // estaba corriendo arranca executeQueue (skipConfirm). Si ya corre, solo
+    // encola y la corrida en curso lo recogera en la siguiente iteracion.
+    async function enqueueExtraOddsFlow(params, contextLabel) {
+        const wasRunning = running;
+        const n = await openEnqueueCountModal(params, contextLabel, { isRunning: wasRunning });
+        if (!n || n < 1) return;
+        addToQueue({
+            gid: params.gid,
+            title: contextLabel,
+            timeLeft: '',
+            fnName: params.fnName || 'joinGiveawayOrAuction',
+            price: params.price,
+            fnArg2: params.fnArg2,
+            token: params.token,
+            count: n,
+            done: 0,
+            type: 'bulk',
+            addedAt: Date.now(),
+        });
+        if (wasRunning) {
+            showToast(fmt(T.enqueuedAddedRunning, { n }), 'info');
+        } else {
+            // Atajo "encolar y ejecutar": el usuario ya confirmo la cantidad
+            // en el modal, no hace falta el modal de cola otra vez.
+            executeQueue({ skipConfirm: true });
+        }
     }
 
     // =============================================
@@ -1492,7 +1670,7 @@
         btn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            runBulkJoin(params, title.trim());
+            enqueueExtraOddsFlow(params, title.trim());
         });
         cardJoinDiv.parentElement.appendChild(btn);
     }
@@ -1535,18 +1713,18 @@
 
             // Extra Odds: badge de bulk-join (en cualquier listado)
             if (isExtraOdds && params.price >= 1 && !host.querySelector('.' + BULK_BADGE_CLASS)) {
-                const balance = getCurrentBalance();
-                const maxCount = balance != null ? Math.floor(balance / params.price) : 0;
+                const maxCount = maxEnqueueCount(params.price);
+                const n = maxCount == null ? 0 : maxCount;
 
                 const badge = document.createElement('div');
                 badge.className = BULK_BADGE_CLASS;
                 badge.dataset.price = String(params.price);
-                badge.textContent = fmt(T.bulkBadge, { n: maxCount });
-                badge.title = fmt(T.bulkBadgeTooltip, { n: maxCount });
+                badge.textContent = fmt(T.bulkBadge, { n });
+                badge.title = fmt(T.bulkBadgeTooltip, { n });
                 badge.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    runBulkJoin(params, title);
+                    enqueueExtraOddsFlow(params, title);
                 });
                 host.appendChild(badge);
             }
@@ -1556,6 +1734,7 @@
                 const btn = document.createElement('div');
                 btn.className = QBTN_CLASS;
                 btn.dataset.gid = params.gid;
+                btn.dataset.price = String(params.price);
                 const inQ = isInQueue(params.gid);
                 btn.classList.toggle('ig-q-btn-active', inQ);
                 btn.textContent = inQ ? T.queueRemoveBtn : T.queueAddBtn;
@@ -1567,23 +1746,27 @@
                         removeFromQueue(params.gid);
                         return;
                     }
-                    // Bloquear encolado cuando no hay GalaSilver disponible.
-                    // Si el cache dice 0/null, re-leer DOM y SOBREESCRIBIR (puede
-                    // haber cambiado: top-up, premio, etc.). El usuario esta
-                    // intentando encolar; le damos la cifra mas reciente.
-                    let bal = getCurrentBalance();
-                    if (bal == null || bal <= 0) {
-                        bal = forceReadBalance();
+                    // El presupuesto disponible ya descuenta lo comprometido en
+                    // la cola. Si el cache esta stale (0 o null) forzamos lectura
+                    // fresca del DOM antes de validar contra el precio.
+                    let avail = availableForEnqueue();
+                    if (avail == null || avail <= 0) {
+                        forceReadBalance();
+                        avail = availableForEnqueue();
                     }
-                    if (bal == null) { showToast(T.balanceUnknown, 'error'); return; }
-                    if (bal <= 0) { showToast(T.queueNoBalance, 'warn'); return; }
+                    if (avail == null) { showToast(T.balanceUnknown, 'error'); return; }
+                    if (avail < params.price) { showToast(T.enqueueNoBudget, 'warn'); return; }
                     addToQueue({
                         gid: params.gid,
-                        price: params.price,       // costo en iS (data-price)
-                        fnArg2: params.fnArg2,     // segundo arg para joinGiveawayOrAuction
-                        token: params.token,
                         title: title,
                         timeLeft: timeLeft,
+                        fnName: 'joinGiveawayOrAuction',
+                        price: params.price,
+                        fnArg2: params.fnArg2,
+                        token: params.token,
+                        count: 1,
+                        done: 0,
+                        type: 'single',
                         addedAt: Date.now(),
                     });
                 });
