@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
 // @namespace    http://tampermonkey.net/
-// @version      1.1.9
+// @version      1.2.1
 // @description  Anade a Indiegala Giveaways una cola unificada que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo gid, con count por item) ejecutados secuencialmente. Permite añadir/quitar items mientras la cola corre, valida presupuesto restando lo ya comprometido, y usa un Web Worker timer para que las pausas no se inflen cuando la pestaña esta en background. Delays humanizados, control de aborto, boton Continuar tras stop recuperable. ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -46,7 +46,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.1.9';
+    const SCRIPT_VERSION = '1.2.1';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
@@ -829,6 +829,7 @@
                 padding: 0 4px;
                 overflow-y: auto;
                 flex: 1;
+                min-height: 0;
                 max-height: 280px;
             }
             #${PANEL_ID} .ig-q-list li {
@@ -1061,6 +1062,94 @@
                 display: none;
             }
             #${MODAL_ID} .ig-inline-error.ig-visible { display: block; }
+
+            /* ===== Mobile / viewports angostos ===== */
+            @media (max-width: 600px) {
+                /* Overlay de progreso: pasa a ser una barra ancha pegada al
+                   tope para no taparse con modales/panel ni con el teclado. */
+                #${PROGRESS_OVERLAY_ID} {
+                    top: 0; left: 0; right: 0; bottom: auto;
+                    width: auto;
+                    min-width: 0;
+                    padding: 8px 12px 10px;
+                    border-radius: 0 0 8px 8px;
+                    box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+                }
+                #${PROGRESS_OVERLAY_ID} h4 { font-size: 13px; margin: 0 0 4px; }
+                #${PROGRESS_OVERLAY_ID} .ig-prog-status { font-size: 11px; }
+                #${PROGRESS_OVERLAY_ID} .ig-prog-bar { margin: 6px 0; }
+                #${PROGRESS_OVERLAY_ID} .ig-prog-warning {
+                    margin-top: 6px;
+                    padding: 4px 6px;
+                    font-size: 10px;
+                    line-height: 1.25;
+                }
+                #${PROGRESS_OVERLAY_ID} .ig-prog-actions { margin-top: 8px; }
+                #${PROGRESS_OVERLAY_ID} button { padding: 8px 12px; font-size: 12px; }
+
+                /* Cola: ancho completo abajo, altura limitada para no taparse
+                   con el overlay del tope ni con la barra del navegador. */
+                #${PANEL_ID} {
+                    left: 8px; right: 8px; bottom: 8px;
+                    width: auto;
+                    max-height: 55vh;
+                }
+                #${PANEL_ID} .ig-q-list { max-height: 35vh; }
+                /* Si el overlay de progreso ya muestra el warning, ocultamos
+                   la copia del header de la cola para no duplicarlo. */
+                body:has(#${PROGRESS_OVERLAY_ID}) #${PANEL_ID} .ig-q-warning-bar {
+                    display: none;
+                }
+
+                /* Modal Encolar / confirm cola: backdrop scrolleable y modal
+                   ajustado para que los botones de accion no queden tapados
+                   por el overlay o el teclado virtual. */
+                #${MODAL_ID}-backdrop {
+                    align-items: flex-start;
+                    padding: 60px 0 20px;
+                    overflow-y: auto;
+                    -webkit-overflow-scrolling: touch;
+                }
+                /* Cuando el overlay de progreso esta visible, reservamos mas
+                   espacio arriba para que el modal no quede tapado. */
+                body:has(#${PROGRESS_OVERLAY_ID}) #${MODAL_ID}-backdrop,
+                body:has(#${PROGRESS_OVERLAY_ID}) .ig-confirm-backdrop {
+                    padding-top: 180px;
+                }
+                #${MODAL_ID} {
+                    width: 94%;
+                    max-width: none;
+                    padding: 16px 16px 14px;
+                }
+                #${MODAL_ID} h3 { font-size: 16px; }
+                #${MODAL_ID} .ig-warning { font-size: 11px; padding: 8px 10px; margin-bottom: 10px; }
+                #${MODAL_ID} .ig-warning b { font-size: 12px; }
+                #${MODAL_ID} .ig-row { font-size: 12px; }
+                #${MODAL_ID} input[type="number"] { font-size: 16px; padding: 10px; }
+                #${MODAL_ID} .ig-actions {
+                    position: sticky;
+                    bottom: 0;
+                    background: #fff;
+                    padding-top: 8px;
+                    margin-top: 8px;
+                }
+                #${MODAL_ID} button { padding: 12px; }
+
+                /* Confirm modal generico (showConfirm): misma logica. */
+                .ig-confirm-backdrop {
+                    align-items: flex-start;
+                    padding: 60px 0 20px;
+                    overflow-y: auto;
+                    -webkit-overflow-scrolling: touch;
+                }
+                .ig-confirm-modal { width: 94%; max-width: none; padding: 16px; }
+
+                /* Toasts: full-width arriba, debajo del overlay si lo hay. */
+                #ig-toast-container {
+                    top: 8px; left: 8px; right: 8px;
+                }
+                .ig-toast { max-width: none; min-width: 0; }
+            }
         `;
         document.head.appendChild(style);
     }
@@ -1548,6 +1637,24 @@
         const totalCost = pendingQueueCost();
         // El primer item con pendientes es el "en curso" si running=true.
         const activeGid = running ? (queue.find(q => itemPending(q) > 0) || {}).gid : null;
+
+        // El MutationObserver re-dispara injectAll() (y por ende este render)
+        // cada vez que el sitio toca el DOM por AJAX/carrusel. Reescribir
+        // innerHTML resetea scrollTop de la lista a 0, asi que el scroll del
+        // usuario "rebota" al inicio. Para evitarlo, solo reconstruimos cuando
+        // el contenido visible cambio de verdad: firma = items pendientes +
+        // totales + item activo + estado running. Si la firma no cambio,
+        // salimos sin tocar el DOM y el scroll se preserva.
+        const sig = JSON.stringify({
+            r: running,
+            a: activeGid,
+            t: totalTickets,
+            c: totalCost,
+            items: queue.map(q => [q.gid, q.title, itemPending(q), q.price || 0, q.count || 1, q.done || 0]),
+        });
+        if (panel.dataset.sig === sig && panel.querySelector('.ig-q-list')) return;
+        panel.dataset.sig = sig;
+
         const items = queue.map(q => {
             const pending = itemPending(q);
             const totalForRow = pending * (q.price || 0);
