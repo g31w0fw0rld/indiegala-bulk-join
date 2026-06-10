@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
 // @namespace    http://tampermonkey.net/
-// @version      1.2.1
-// @description  Anade a Indiegala Giveaways una cola unificada que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo gid, con count por item) ejecutados secuencialmente. Permite añadir/quitar items mientras la cola corre, valida presupuesto restando lo ya comprometido, y usa un Web Worker timer para que las pausas no se inflen cuando la pestaña esta en background. Delays humanizados, control de aborto, boton Continuar tras stop recuperable. ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
+// @version      1.3.0
+// @description  Anade a Indiegala Giveaways una cola unificada que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo gid, con count por item) ejecutados secuencialmente. Permite añadir/quitar items mientras la cola corre, valida presupuesto restando lo ya comprometido, y usa un Web Worker timer para que las pausas no se inflen cuando la pestaña esta en background. Delays humanizados, control de aborto, boton Continuar tras stop recuperable. Incluye un widget de saldo GalaSilver con boton para abrir tu biblioteca en una pestaña nueva y revisar automaticamente los giveaways completados por ganar (Check all). ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
+// @match        https://www.indiegala.com/library
+// @match        https://www.indiegala.com/library/*
 // @author       g31w0fw0rld
 // @license      MIT
 // @downloadURL  https://github.com/g31w0fw0rld/indiegala-bulk-join/raw/main/indiegala-bulk-join.user.js
@@ -46,7 +48,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.2.1';
+    const SCRIPT_VERSION = '1.3.0';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
@@ -129,6 +131,21 @@
             closeBtn: 'Cerrar',
             continueBtn: 'Continuar',
             continueTooFastWarning: 'El servidor pidió bajar el ritmo (too_fast). Continuar ahora puede aumentar el riesgo de ban. ¿Estás seguro?',
+            // Widget de saldo + revisar premios (biblioteca)
+            widgetTitle: 'GalaSilver',
+            widgetGalaCredit: 'GalaCredit: {v}',
+            widgetAvailable: 'Disponible (− cola): {n} iS',
+            widgetCheckBtn: '🎁 Revisar premios',
+            widgetCheckBtnTooltip: 'Abre tu biblioteca en una pestaña nueva y revisa automáticamente los giveaways completados por ganar (Check all).',
+            widgetBalanceUnknown: '— iS',
+            libAutoStart: 'Abriendo biblioteca y revisando premios…',
+            libClickGiveaways: 'Abriendo pestaña Giveaways…',
+            libClickCompleted: 'Abriendo "Completed to check"…',
+            libClickCheckAll: 'Revisando todos los giveaways (Check all)…',
+            libClickWon: 'Abriendo "Completed won"…',
+            libElementNotFound: 'No encontré un elemento de la biblioteca a tiempo. Revísalo manualmente.',
+            libDone: 'Listo: revisión de premios disparada.',
+            wheelAvailableAlert: '🎡 ¡La Wheel of Fortune cambió de estado (puede estar disponible para girar)! Atiéndela ahora para que no se te pase.',
         },
         en: {
             // Bulk join (Extra Odds)
@@ -198,6 +215,21 @@
             closeBtn: 'Close',
             continueBtn: 'Continue',
             continueTooFastWarning: 'Server rate-limited (too_fast). Continuing now may increase ban risk. Are you sure?',
+            // Balance widget + check prizes (library)
+            widgetTitle: 'GalaSilver',
+            widgetGalaCredit: 'GalaCredit: {v}',
+            widgetAvailable: 'Available (− queue): {n} iS',
+            widgetCheckBtn: '🎁 Check prizes',
+            widgetCheckBtnTooltip: 'Opens your library in a new tab and automatically checks completed giveaways to see if you won (Check all).',
+            widgetBalanceUnknown: '— iS',
+            libAutoStart: 'Opening library and checking prizes…',
+            libClickGiveaways: 'Opening Giveaways tab…',
+            libClickCompleted: 'Opening "Completed to check"…',
+            libClickCheckAll: 'Checking all giveaways (Check all)…',
+            libClickWon: 'Opening "Completed won"…',
+            libElementNotFound: 'Could not find a library element in time. Please check manually.',
+            libDone: 'Done: prize check triggered.',
+            wheelAvailableAlert: '🎡 The Wheel of Fortune changed state (it may be available to spin)! Go attend it now so you don\'t miss it.',
         },
     };
     const T = i18n[userLang] || i18n.en;
@@ -213,6 +245,7 @@
         longPauseMinMs: 10000,
         longPauseMaxMs: 20000,
         joinResponseTimeoutMs: 60000,
+        wheelCheckIntervalMs: 15 * 60 * 1000,
     };
 
     const STORAGE_KEY = 'ig-st-queue';
@@ -222,6 +255,22 @@
     const PANEL_ID = 'ig-q-panel';
     const PROGRESS_OVERLAY_ID = 'ig-bulk-progress-overlay';
     const MODAL_ID = 'ig-bulk-modal';
+    const BALANCE_WIDGET_ID = 'ig-balance-widget';
+    const LIB_STATUS_ID = 'ig-lib-status';
+
+    // Widget de saldo → "Revisar premios": abre la biblioteca en una pestaña
+    // nueva con un flag en el hash. La misma instancia del script corre en
+    // /library (ver @match), detecta el flag y dispara la secuencia de clics.
+    const LIBRARY_URL = 'https://www.indiegala.com/library';
+    const AUTOCHECK_HASH = 'ig-bulk-autocheck';
+
+    // Vigilante de Wheel of Fortune: en /giveaways, mientras no haya cola
+    // corriendo, se auto-refresca cada CFG.wheelCheckIntervalMs y compara el
+    // elemento del menu de usuario contra esta firma base ("elemento en
+    // cuestion" = estado actual sin novedad). Si difiere, asumimos que la rueda
+    // cambio de estado (disponible) y avisamos con alert().
+    const WHEEL_SELECTOR = '.menu-fortune-wheel';
+    const WHEEL_BASELINE_HTML = '<li class="menu-fortune-wheel"><span><i aria-hidden="true" class="fa fa-gift"></i>Wheel of Fortune</span></li>';
 
     // =============================================
     // ESTADO
@@ -424,6 +473,23 @@
         return null;
     }
 
+    // Lee el GalaCredit (credito en $ de la tienda) del menu de usuario. El
+    // sitio lo expone ya formateado en #galacredits-amount (p.ej. "$ 2.20"); se
+    // devuelve tal cual como string. No tiene cache ni decremento local: es
+    // informativo (el script no gasta galacredit). Fallback por texto si el id
+    // no existe en este layout.
+    function getGalaCredit() {
+        const el = document.getElementById('galacredits-amount');
+        if (el) {
+            const txt = (el.innerText || el.textContent || '').trim();
+            if (txt) return txt;
+        }
+        const all = document.body ? (document.body.textContent || '') : '';
+        const m = all.match(/galacredit[\s\S]{0,40}?(\$\s*[\d,.]+)/i);
+        if (m) return m[1].replace(/\s+/g, ' ').trim();
+        return null;
+    }
+
     // Devuelve el saldo cacheado o lo inicializa desde el DOM la primera vez.
     // Si el DOM ya muestra un saldo MENOR que el cache (porque hubo joins
     // manuales fuera del script o el sitio refresco la cifra), prefiere el del
@@ -487,6 +553,7 @@
                 getCurrentBalance();
                 refreshBulkBadges();
                 refreshQueueButtonsState();
+                renderBalanceWidget();
             } catch (e) {}
         };
         apply();
@@ -540,6 +607,7 @@
                     currentBalance = r.silver_tot;
                     try { refreshBulkBadges(); } catch (e) {}
                     try { refreshQueueButtonsState(); } catch (e) {}
+                    try { renderBalanceWidget(); } catch (e) {}
                 }
                 if (joinResolveQueue.length > 0) {
                     const resolver = joinResolveQueue.shift();
@@ -650,6 +718,11 @@
     }
     function isCardDetail() {
         return /^\/giveaways\/card\//.test(location.pathname);
+    }
+    // Biblioteca del usuario (/library). Aqui NO corre la cola ni la inyeccion
+    // de giveaways: solo la secuencia de auto-revision de premios.
+    function isLibrary() {
+        return /^\/library(\/|$)/.test(location.pathname);
     }
 
     // =============================================
@@ -1063,6 +1136,63 @@
             }
             #${MODAL_ID} .ig-inline-error.ig-visible { display: block; }
 
+            /* ===== Widget de saldo GalaSilver + Revisar premios ===== */
+            #${BALANCE_WIDGET_ID} {
+                position: fixed; top: 72px; right: 16px;
+                z-index: 99996;
+                background: #1f1f1f; color: #fff;
+                border: 1px solid #6a1b9a;
+                border-radius: 8px;
+                padding: 10px 12px;
+                font-family: sans-serif;
+                box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+                min-width: 170px;
+            }
+            #${BALANCE_WIDGET_ID} .ig-bw-title {
+                font-size: 11px; color: #bbb;
+                letter-spacing: 0.5px; text-transform: uppercase;
+            }
+            #${BALANCE_WIDGET_ID} .ig-bw-amount {
+                font-size: 22px; font-weight: bold;
+                color: #ffd54f; line-height: 1.1;
+                margin: 2px 0 4px;
+            }
+            #${BALANCE_WIDGET_ID} .ig-bw-avail {
+                font-size: 11px; color: #9ccc65; margin-bottom: 8px;
+            }
+            #${BALANCE_WIDGET_ID} .ig-bw-credit {
+                font-size: 12px; color: #80d8ff;
+                font-weight: bold; margin-bottom: 8px;
+            }
+            #${BALANCE_WIDGET_ID} .ig-bw-btn {
+                display: block; width: 100%;
+                padding: 8px 10px;
+                font-weight: bold; font-size: 12px;
+                color: #fff;
+                background: linear-gradient(90deg, #6a1b9a 0%, #ad1457 100%);
+                border: none; border-radius: 6px;
+                cursor: pointer; text-align: center;
+                transition: filter 0.15s;
+            }
+            #${BALANCE_WIDGET_ID} .ig-bw-btn:hover { filter: brightness(1.15); }
+
+            /* ===== Estado de auto-revision en /library ===== */
+            #${LIB_STATUS_ID} {
+                position: fixed; top: 16px; left: 50%;
+                transform: translateX(-50%);
+                z-index: 100000;
+                background: #1f1f1f; color: #fff;
+                border-left: 4px solid #ad1457;
+                border-radius: 6px;
+                padding: 12px 18px;
+                font-family: sans-serif; font-size: 13px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+                max-width: 90vw;
+            }
+            #${LIB_STATUS_ID}.ig-lib-status-error {
+                border-left-color: #d32f2f; background: #2a1010;
+            }
+
             /* ===== Mobile / viewports angostos ===== */
             @media (max-width: 600px) {
                 /* Overlay de progreso: pasa a ser una barra ancha pegada al
@@ -1149,6 +1279,14 @@
                     top: 8px; left: 8px; right: 8px;
                 }
                 .ig-toast { max-width: none; min-width: 0; }
+
+                /* Widget de saldo: compacto, arriba a la derecha. */
+                #${BALANCE_WIDGET_ID} {
+                    top: 8px; right: 8px;
+                    padding: 8px 10px;
+                    min-width: 0;
+                }
+                #${BALANCE_WIDGET_ID} .ig-bw-amount { font-size: 18px; }
             }
         `;
         document.head.appendChild(style);
@@ -1713,6 +1851,63 @@
     }
 
     // =============================================
+    // WIDGET DE SALDO GALASILVER + REVISAR PREMIOS
+    // =============================================
+    // Widget flotante (solo en paginas de giveaways) que muestra el saldo
+    // GalaSilver y, debajo, un boton que abre la biblioteca en una pestaña
+    // nueva con el flag de auto-revision. Idempotente: crea el nodo la primera
+    // vez y solo refresca textos en llamadas posteriores. Se llama desde
+    // injectAll (periodico) y desde los puntos donde cambia el saldo.
+    function renderBalanceWidget() {
+        if (isLibrary()) {
+            const ex = document.getElementById(BALANCE_WIDGET_ID);
+            if (ex) ex.remove();
+            return;
+        }
+        if (!document.body) return;
+        let w = document.getElementById(BALANCE_WIDGET_ID);
+        if (!w) {
+            w = document.createElement('div');
+            w.id = BALANCE_WIDGET_ID;
+            w.innerHTML = `
+                <div class="ig-bw-title">${T.widgetTitle}</div>
+                <div class="ig-bw-amount" id="ig-bw-amount">${T.widgetBalanceUnknown}</div>
+                <div class="ig-bw-avail" id="ig-bw-avail" style="display:none"></div>
+                <div class="ig-bw-credit" id="ig-bw-credit" style="display:none"></div>
+                <button type="button" class="ig-bw-btn" id="ig-bw-check" title="${escapeHtml(T.widgetCheckBtnTooltip)}">${T.widgetCheckBtn}</button>
+            `;
+            document.body.appendChild(w);
+            w.querySelector('#ig-bw-check').addEventListener('click', (e) => {
+                e.preventDefault();
+                window.open(LIBRARY_URL + '#' + AUTOCHECK_HASH, '_blank', 'noopener');
+            });
+        }
+        const bal = getCurrentBalance();
+        const amountEl = w.querySelector('#ig-bw-amount');
+        if (amountEl) amountEl.textContent = (bal == null) ? T.widgetBalanceUnknown : (bal + ' iS');
+        const availEl = w.querySelector('#ig-bw-avail');
+        if (availEl) {
+            const pendingCost = pendingQueueCost();
+            if (bal != null && pendingCost > 0) {
+                availEl.style.display = '';
+                availEl.textContent = fmt(T.widgetAvailable, { n: Math.max(0, bal - pendingCost) });
+            } else {
+                availEl.style.display = 'none';
+            }
+        }
+        const creditEl = w.querySelector('#ig-bw-credit');
+        if (creditEl) {
+            const credit = getGalaCredit();
+            if (credit != null) {
+                creditEl.style.display = '';
+                creditEl.textContent = fmt(T.widgetGalaCredit, { v: credit });
+            } else {
+                creditEl.style.display = 'none';
+            }
+        }
+    }
+
+    // =============================================
     // ENCOLAR EXTRA ODDS (badge / card detail)
     // =============================================
     // Abre el modal de cantidad, encola N copias del gid, y si la cola no
@@ -1742,6 +1937,180 @@
             // en el modal, no hace falta el modal de cola otra vez.
             executeQueue({ skipConfirm: true });
         }
+    }
+
+    // =============================================
+    // AUTO-REVISION DE PREMIOS EN /library
+    // =============================================
+    // Espera (via MutationObserver + timeout) a que aparezca el primer elemento
+    // que matchee `selector`. Resuelve con el elemento o null si se agota el
+    // tiempo. La biblioteca renderiza pestañas/subsecciones por AJAX, asi que
+    // los elementos no estan al cargar la pagina.
+    function waitForElement(selector, timeoutMs) {
+        return new Promise((resolve) => {
+            const found = document.querySelector(selector);
+            if (found) { resolve(found); return; }
+            let done = false;
+            const finish = (el) => {
+                if (done) return;
+                done = true;
+                try { obs.disconnect(); } catch (_) {}
+                clearTimeout(timer);
+                resolve(el);
+            };
+            const obs = new MutationObserver(() => {
+                const el = document.querySelector(selector);
+                if (el) finish(el);
+            });
+            obs.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+            const timer = setTimeout(() => finish(null), timeoutMs);
+        });
+    }
+
+    // Caja de estado fija (arriba-centro) para la secuencia en /library.
+    function showLibraryStatus(msg, isError) {
+        let box = document.getElementById(LIB_STATUS_ID);
+        if (!box) {
+            box = document.createElement('div');
+            box.id = LIB_STATUS_ID;
+            document.body.appendChild(box);
+        }
+        box.classList.toggle('ig-lib-status-error', !!isError);
+        box.textContent = msg;
+    }
+
+    // Dispara la accion del ancla. Prefiere invocar la funcion global del sitio
+    // directamente (evita el salto de href="#" y no depende de event.isTrusted);
+    // si no existe en este contexto, cae a un click DOM real.
+    function fireSiteAction(el, fnName, args) {
+        try {
+            const fn = (typeof unsafeWindow !== 'undefined') ? unsafeWindow[fnName] : window[fnName];
+            if (typeof fn === 'function') {
+                fn.apply(el, args);
+                return true;
+            }
+        } catch (e) {
+            console.warn('[IG-BulkTools] fireSiteAction', fnName, e);
+        }
+        try { el.click(); return true; } catch (_) { return false; }
+    }
+
+    const LIB_WAIT_MS = 20000;
+    const libSettle = () => abortableSleep(rand(700, 1300));
+
+    // Secuencia: Giveaways → Completed to check → Check all. Cada paso espera a
+    // que el elemento exista antes de disparar la accion, con un settle entre
+    // clics para dar tiempo al render AJAX del sitio.
+    async function runLibraryAutoCheck() {
+        if (runLibraryAutoCheck._started) return;
+        runLibraryAutoCheck._started = true;
+
+        // Limpiar el flag del hash para que un reload manual no re-dispare.
+        try { history.replaceState(null, '', location.pathname + location.search); } catch (_) {}
+
+        try { injectStyles(); } catch (_) {}
+        showLibraryStatus(T.libAutoStart);
+
+        // 1) Pestaña Giveaways
+        const gvTab = await waitForElement('a[onclick*="switchLibraryTab(\'giveaways\'"]', LIB_WAIT_MS);
+        if (!gvTab) { showLibraryStatus(T.libElementNotFound, true); return; }
+        await libSettle();
+        showLibraryStatus(T.libClickGiveaways);
+        fireSiteAction(gvTab, 'switchLibraryTab', ['giveaways', gvTab, makeFakeEvent()]);
+
+        // 2) Subseccion "Completed to check"
+        await libSettle();
+        const compTab = await waitForElement('a[onclick*="giveaways-completed-tocheck"]', LIB_WAIT_MS);
+        if (!compTab) { showLibraryStatus(T.libElementNotFound, true); return; }
+        await libSettle();
+        showLibraryStatus(T.libClickCompleted);
+        fireSiteAction(compTab, 'switchSubSection', [compTab, makeFakeEvent(), 'giveaways-completed-tocheck']);
+
+        // 3) Boton "Check all"
+        await libSettle();
+        const checkAll = await waitForElement('a.library-giveaways-check-all-btn', LIB_WAIT_MS);
+        if (!checkAll) { showLibraryStatus(T.libElementNotFound, true); return; }
+        await libSettle();
+        showLibraryStatus(T.libClickCheckAll);
+        fireSiteAction(checkAll, 'giveawayCheckIfWinnerAll', [checkAll, makeFakeEvent()]);
+
+        // 4) Subseccion "Completed won". El "Check all" revisa cada giveaway por
+        // AJAX y puede tardar; damos un margen mas amplio antes de cambiar de
+        // subseccion para no cortar la revision a la mitad.
+        await abortableSleep(rand(3000, 5000));
+        const wonTab = await waitForElement('a[onclick*="giveaways-completed-won"]', LIB_WAIT_MS);
+        if (!wonTab) { showLibraryStatus(T.libElementNotFound, true); return; }
+        await libSettle();
+        showLibraryStatus(T.libClickWon);
+        fireSiteAction(wonTab, 'switchSubSection', [wonTab, makeFakeEvent(), 'giveaways-completed-won']);
+
+        await abortableSleep(1500);
+        showLibraryStatus(T.libDone);
+        const box = document.getElementById(LIB_STATUS_ID);
+        if (box) setTimeout(() => { try { box.remove(); } catch (_) {} }, 6000);
+    }
+
+    // =============================================
+    // VIGILANTE DE WHEEL OF FORTUNE (auto-refresh /giveaways)
+    // =============================================
+    // Normaliza HTML a una firma comparable: quita comentarios, colapsa espacios
+    // entre tags y en general, y pasa a minusculas. Asi diferencias triviales de
+    // formato no cuentan como "cambio".
+    function normalizeHtmlSig(s) {
+        return String(s || '')
+            .replace(/<!--[\s\S]*?-->/g, '')
+            .replace(/>\s+</g, '><')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toLowerCase();
+    }
+    const WHEEL_BASELINE_SIG = normalizeHtmlSig(WHEEL_BASELINE_HTML);
+
+    // true si el usuario esta en medio de algo que no conviene interrumpir con
+    // un reload: un modal (encolar / confirm) o el overlay de progreso/resultado
+    // de la cola abiertos.
+    function isUserBusy() {
+        return !!document.querySelector(
+            '#' + MODAL_ID + '-backdrop, .ig-confirm-backdrop, #' + PROGRESS_OVERLAY_ID
+        );
+    }
+
+    // Chequeo puntual en el load actual: espera a que el .menu-fortune-wheel
+    // exista (el submenu de usuario puede renderizarse por AJAX), compara su
+    // firma contra la base y, si difiere, dispara un alert() bloqueante.
+    async function checkWheelOnce() {
+        const el = await waitForElement(WHEEL_SELECTOR, 15000);
+        if (!el) {
+            console.log('[IG-BulkTools] wheel: elemento no encontrado, omito chequeo.');
+            return;
+        }
+        const sig = normalizeHtmlSig(el.outerHTML);
+        const changed = sig !== WHEEL_BASELINE_SIG;
+        console.log('[IG-BulkTools] wheel sig:', sig, '| baseline:', WHEEL_BASELINE_SIG, '| changed:', changed);
+        if (changed) {
+            try { (typeof unsafeWindow !== 'undefined' && unsafeWindow.alert ? unsafeWindow.alert : window.alert)(T.wheelAvailableAlert); }
+            catch (_) { try { window.alert(T.wheelAvailableAlert); } catch (__) {} }
+        }
+    }
+
+    // Auto-refresca /giveaways cada CFG.wheelCheckIntervalMs (15 min) para
+    // detectar a tiempo cuando la Wheel of Fortune cambia de estado. Solo en el
+    // listado raiz. La espera usa el timer en Web Worker (resistente al
+    // throttling de pestañas en background). No recarga mientras haya cola en
+    // curso (running) ni mientras el usuario tenga un modal/overlay abierto:
+    // en ese caso reintenta cada 30 s hasta que se libere.
+    async function startWheelWatcher() {
+        if (!isListingRoot()) return;
+        if (startWheelWatcher._started) return;
+        startWheelWatcher._started = true;
+
+        try { await checkWheelOnce(); } catch (e) { console.error('[IG-BulkTools] checkWheelOnce:', e); }
+
+        await sleep(CFG.wheelCheckIntervalMs);
+        while (running || isUserBusy()) {
+            await sleep(30000);
+        }
+        try { location.reload(); } catch (_) {}
     }
 
     // =============================================
@@ -1889,7 +2258,7 @@
         try { renderQueuePanel(); } catch (e) { console.error('[IG-BulkTools] renderQueuePanel:', e); }
         // Asegurar que botones recien inyectados reflejen el estado de saldo (deshabilitar
         // los ＋ cuando bal=0). Tambien resincroniza con el DOM si Indiegala actualizo iS.
-        try { getCurrentBalance(); refreshQueueButtonsState(); refreshBulkBadges(); } catch (e) {}
+        try { getCurrentBalance(); refreshQueueButtonsState(); refreshBulkBadges(); renderBalanceWidget(); } catch (e) {}
     }
 
     // =============================================
@@ -1917,9 +2286,26 @@
         observer.observe(document.body, { childList: true, subtree: true });
     }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', startObserver);
-    } else {
+    // Punto de entrada. En /library NO se monta la cola ni el observador de
+    // giveaways: solo, si venimos del boton "Revisar premios" (flag en el hash),
+    // se dispara la secuencia de auto-revision. En el resto de paginas (/giveaways*)
+    // arranca el flujo normal (cola, badges, widget de saldo).
+    function boot() {
+        try { injectStyles(); } catch (e) {}
+        if (isLibrary()) {
+            if (location.hash && location.hash.indexOf(AUTOCHECK_HASH) !== -1) {
+                runLibraryAutoCheck();
+            }
+            return;
+        }
         startObserver();
+        // Vigilante de Wheel of Fortune (se auto-limita a /giveaways listado raiz).
+        startWheelWatcher();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', boot);
+    } else {
+        boot();
     }
 })();
