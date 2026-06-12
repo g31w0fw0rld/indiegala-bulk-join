@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
 // @namespace    http://tampermonkey.net/
-// @version      1.3.0
-// @description  Anade a Indiegala Giveaways una cola unificada que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo gid, con count por item) ejecutados secuencialmente. Permite añadir/quitar items mientras la cola corre, valida presupuesto restando lo ya comprometido, y usa un Web Worker timer para que las pausas no se inflen cuando la pestaña esta en background. Delays humanizados, control de aborto, boton Continuar tras stop recuperable. Incluye un widget de saldo GalaSilver con boton para abrir tu biblioteca en una pestaña nueva y revisar automaticamente los giveaways completados por ganar (Check all). ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
+// @version      1.4.0
+// @description  Anade a Indiegala Giveaways una cola unificada que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo gid, con count por item) ejecutados secuencialmente. Permite añadir/quitar items mientras la cola corre, valida presupuesto restando lo ya comprometido, y usa un Web Worker timer para que las pausas no se inflen cuando la pestaña esta en background. Delays humanizados, control de aborto, boton Continuar tras stop recuperable. Incluye un widget de saldo GalaSilver con boton para abrir tu biblioteca en una pestaña nueva y revisar automaticamente los giveaways completados por ganar (Check all); si "Completed to check" esta vacio lo informa y de todas formas pasa a "Completed won" para detectar premios con fecha de hoy y avisarte (una sola vez por premio). ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
 // @match        https://www.indiegala.com/library
@@ -48,7 +48,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.3.0';
+    const SCRIPT_VERSION = '1.4.0';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
@@ -143,6 +143,11 @@
             libClickCompleted: 'Abriendo "Completed to check"…',
             libClickCheckAll: 'Revisando todos los giveaways (Check all)…',
             libClickWon: 'Abriendo "Completed won"…',
+            libNothingToCheck: 'Nada por revisar: "Completed to check" está vacío.',
+            libCheckingWon: 'Revisando premios ganados…',
+            libNoNewWins: 'Sin premios nuevos hoy.',
+            libWonStatus: '🎉 ¡Ganaste {n} premio(s) hoy!',
+            winWidgetTitle: '🎉 ¡Premios ganados hoy! ({n})',
             libElementNotFound: 'No encontré un elemento de la biblioteca a tiempo. Revísalo manualmente.',
             libDone: 'Listo: revisión de premios disparada.',
             wheelAvailableAlert: '🎡 ¡La Wheel of Fortune cambió de estado (puede estar disponible para girar)! Atiéndela ahora para que no se te pase.',
@@ -227,6 +232,11 @@
             libClickCompleted: 'Opening "Completed to check"…',
             libClickCheckAll: 'Checking all giveaways (Check all)…',
             libClickWon: 'Opening "Completed won"…',
+            libNothingToCheck: 'Nothing to check: "Completed to check" is empty.',
+            libCheckingWon: 'Checking won prizes…',
+            libNoNewWins: 'No new prizes today.',
+            libWonStatus: '🎉 You won {n} prize(s) today!',
+            winWidgetTitle: '🎉 Prizes won today! ({n})',
             libElementNotFound: 'Could not find a library element in time. Please check manually.',
             libDone: 'Done: prize check triggered.',
             wheelAvailableAlert: '🎡 The Wheel of Fortune changed state (it may be available to spin)! Go attend it now so you don\'t miss it.',
@@ -249,6 +259,9 @@
     };
 
     const STORAGE_KEY = 'ig-st-queue';
+    // gids de giveaways ganados ya anunciados (premios "vistos"), para no
+    // re-notificar el mismo premio cada vez que se pulsa "Revisar premios".
+    const SEEN_WINS_KEY = 'ig-bulk-seen-wins';
     const BULK_BTN_CLASS = 'ig-bulk-join-btn';
     const BULK_BADGE_CLASS = 'ig-bulk-join-badge';
     const QBTN_CLASS = 'ig-q-btn';
@@ -257,6 +270,7 @@
     const MODAL_ID = 'ig-bulk-modal';
     const BALANCE_WIDGET_ID = 'ig-balance-widget';
     const LIB_STATUS_ID = 'ig-lib-status';
+    const WIN_WIDGET_ID = 'ig-win-notif';
 
     // Widget de saldo → "Revisar premios": abre la biblioteca en una pestaña
     // nueva con un flag en el hash. La misma instancia del script corre en
@@ -1088,6 +1102,7 @@
             .ig-toast-info { border-left-color: #2196f3; }
             .ig-toast-warn { border-left-color: #ff9800; background: #2a1f10; }
             .ig-toast-error { border-left-color: #d32f2f; background: #2a1010; }
+            .ig-toast-success { border-left-color: #4caf50; background: #122a12; }
 
             .ig-confirm-backdrop {
                 position: fixed; inset: 0;
@@ -1193,6 +1208,46 @@
                 border-left-color: #d32f2f; background: #2a1010;
             }
 
+            /* ===== Widget propio de premios ganados (in-page) ===== */
+            #${WIN_WIDGET_ID} {
+                position: fixed; top: 70px; left: 50%;
+                transform: translateX(-50%);
+                z-index: 100001;
+                background: #1f1f1f; color: #fff;
+                border: 2px solid #ad1457;
+                border-radius: 10px;
+                padding: 14px 42px 14px 18px;
+                font-family: sans-serif;
+                box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+                width: 360px; max-width: 92vw;
+                max-height: 60vh; overflow-y: auto;
+            }
+            #${WIN_WIDGET_ID} .ig-wn-title {
+                font-size: 15px; font-weight: bold;
+                color: #ff7da6; margin-bottom: 8px;
+            }
+            #${WIN_WIDGET_ID} .ig-wn-list { list-style: none; margin: 0; padding: 0; }
+            #${WIN_WIDGET_ID} .ig-wn-list li {
+                padding: 6px 0;
+                border-top: 1px solid #333;
+                font-size: 13px;
+            }
+            #${WIN_WIDGET_ID} .ig-wn-list li:first-child { border-top: none; }
+            #${WIN_WIDGET_ID} .ig-wn-list a {
+                color: #80d8ff; text-decoration: none; display: block;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            }
+            #${WIN_WIDGET_ID} .ig-wn-list a:hover { text-decoration: underline; }
+            #${WIN_WIDGET_ID} .ig-wn-close {
+                position: absolute; top: 8px; right: 10px;
+                width: 24px; height: 24px;
+                border: none; border-radius: 50%;
+                background: #c62828; color: #fff;
+                cursor: pointer; font-weight: bold;
+                font-size: 14px; line-height: 1;
+            }
+            #${WIN_WIDGET_ID} .ig-wn-close:hover { filter: brightness(1.15); }
+
             /* ===== Mobile / viewports angostos ===== */
             @media (max-width: 600px) {
                 /* Overlay de progreso: pasa a ser una barra ancha pegada al
@@ -1287,6 +1342,12 @@
                     min-width: 0;
                 }
                 #${BALANCE_WIDGET_ID} .ig-bw-amount { font-size: 18px; }
+
+                /* Widget de premios ganados: ancho completo bajo el estado. */
+                #${WIN_WIDGET_ID} {
+                    top: 56px; left: 8px; right: 8px;
+                    width: auto; transform: none;
+                }
             }
         `;
         document.head.appendChild(style);
@@ -1998,9 +2059,143 @@
     const LIB_WAIT_MS = 20000;
     const libSettle = () => abortableSleep(rand(700, 1300));
 
-    // Secuencia: Giveaways → Completed to check → Check all. Cada paso espera a
-    // que el elemento exista antes de disparar la accion, con un settle entre
-    // clics para dar tiempo al render AJAX del sitio.
+    // ---- Premios ganados "vistos" (persistente) -------------------------------
+    function loadSeenWins() {
+        try {
+            let raw = null;
+            if (typeof GM_getValue !== 'undefined') {
+                const v = GM_getValue(SEEN_WINS_KEY, null);
+                if (Array.isArray(v)) raw = v;
+                else if (typeof v === 'string') { try { raw = JSON.parse(v); } catch (_) { raw = null; } }
+            }
+            if (!Array.isArray(raw)) {
+                const s = localStorage.getItem(SEEN_WINS_KEY);
+                raw = s ? JSON.parse(s) : [];
+            }
+            return Array.isArray(raw) ? raw.map(String) : [];
+        } catch (e) {
+            console.error('[IG-BulkTools] loadSeenWins error:', e);
+            return [];
+        }
+    }
+    function saveSeenWins(arr) {
+        try {
+            const json = JSON.stringify(arr);
+            if (typeof GM_setValue !== 'undefined') GM_setValue(SEEN_WINS_KEY, json);
+            localStorage.setItem(SEEN_WINS_KEY, json);
+        } catch (e) {
+            console.error('[IG-BulkTools] saveSeenWins error:', e);
+        }
+    }
+
+    // "13 May 2026, 09:15" → {d, mo, y} (mes 0-based) o null si no es una fecha.
+    const WON_MONTHS = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
+    function parseWonDate(str) {
+        const m = /(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})/.exec(String(str || ''));
+        if (!m) return null;
+        const mo = WON_MONTHS[m[2].slice(0, 3).toLowerCase()];
+        if (mo == null) return null;
+        return { d: parseInt(m[1], 10), mo, y: parseInt(m[3], 10) };
+    }
+
+    // Recorre las filas de "Completed won" y devuelve [{gid, title}] cuya columna
+    // "Time end" tenga fecha de HOY (ignorando la hora). El listado viene ordenado
+    // por fecha descendente, asi que los de hoy estan en la primera pagina.
+    function collectTodayWins() {
+        const now = new Date();
+        const td = now.getDate(), tmo = now.getMonth(), ty = now.getFullYear();
+        const out = [];
+        document.querySelectorAll('#giveaways-completed-won li.profile-private-sub-section-body').forEach(li => {
+            const link = li.querySelector('a[href*="/giveaways/card/"]');
+            if (!link) return;
+            const href = link.getAttribute('href') || '';
+            const gid = (href.match(/\/(\d+)(?:[?#]|$)/) || [])[1] || href.split('/').pop();
+            const title = (link.textContent || '').trim() || ('#' + gid);
+            // La primera celda que parsee como fecha es "Time end" (img/título/
+            // creador no matchean; el serial key tampoco).
+            let date = null;
+            const cells = li.querySelectorAll('.profile-private-sub-section-col-inner');
+            for (let i = 0; i < cells.length && !date; i++) date = parseWonDate(cells[i].textContent);
+            if (!date) return;
+            if (date.d === td && date.mo === tmo && date.y === ty) out.push({ gid: String(gid), title, href });
+        });
+        return out;
+    }
+
+    // Widget propio en-pagina para anunciar los premios ganados hoy. No usamos
+    // notificaciones del navegador: igual que en los scripts de Twitch/Kick, el
+    // aviso vive dentro de la pagina con su propio widget. Persistente hasta que
+    // el usuario lo cierra; lista cada premio con enlace a su giveaway.
+    function showWinWidget(wins) {
+        const old = document.getElementById(WIN_WIDGET_ID);
+        if (old) old.remove();
+        const w = document.createElement('div');
+        w.id = WIN_WIDGET_ID;
+        const items = wins.map(win => {
+            // Solo rutas relativas same-origin del propio sitio ("/..." pero no
+            // "//..."): rechaza javascript:, data:, vbscript: y absolutas, que el
+            // escape de comillas no neutraliza.
+            const safeHref = /^\/(?!\/)/.test(String(win.href || '')) ? win.href : '#';
+            return `
+            <li><a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener" title="${escapeHtml(win.title)}">${escapeHtml(win.title)}</a></li>
+        `;
+        }).join('');
+        w.innerHTML = `
+            <button type="button" class="ig-wn-close" title="${escapeHtml(T.closeBtn)}">×</button>
+            <div class="ig-wn-title">${escapeHtml(fmt(T.winWidgetTitle, { n: wins.length }))}</div>
+            <ul class="ig-wn-list">${items}</ul>
+        `;
+        document.body.appendChild(w);
+        w.querySelector('.ig-wn-close').addEventListener('click', () => { try { w.remove(); } catch (_) {} });
+    }
+
+    // Beep de aviso (Web Audio, best-effort: la pestaña puede bloquear el audio
+    // sin un gesto previo del usuario). Pequeno arpegio ascendente.
+    function playWinBeep() {
+        try {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return;
+            const ctx = new Ctx();
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            o.type = 'sine';
+            o.connect(g); g.connect(ctx.destination);
+            const t0 = ctx.currentTime;
+            o.frequency.setValueAtTime(880, t0);
+            o.frequency.setValueAtTime(1175, t0 + 0.12);
+            g.gain.setValueAtTime(0.06, t0);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.4);
+            o.start(t0);
+            o.stop(t0 + 0.42);
+            o.onended = () => { try { ctx.close(); } catch (_) {} };
+        } catch (_) {}
+    }
+
+    // Detecta premios ganados hoy en "Completed won", anuncia solo los que no
+    // habiamos visto antes (widget propio in-page + beep + toast) y los marca
+    // como vistos (persistente). Al abrir esta subseccion el propio sitio da por
+    // vista la notificacion de ganado.
+    function announceTodayWins() {
+        let wins = [];
+        try { wins = collectTodayWins(); } catch (e) { console.error('[IG-BulkTools] collectTodayWins:', e); }
+        const seen = loadSeenWins();
+        const fresh = wins.filter(w => seen.indexOf(w.gid) === -1);
+        if (!fresh.length) { showLibraryStatus(T.libNoNewWins); return; }
+        saveSeenWins(seen.concat(fresh.map(w => w.gid)));
+
+        const status = fmt(T.libWonStatus, { n: fresh.length });
+        showLibraryStatus(status);
+        try { showToast(status, 'success'); } catch (_) {}
+        // Badge en el titulo de la pestaña, como en Twitch/Kick.
+        try { document.title = '(' + fresh.length + ') ' + document.title.replace(/^\(\d+\)\s*/, ''); } catch (_) {}
+
+        showWinWidget(fresh);
+        playWinBeep();
+    }
+
+    // Secuencia: Giveaways → Completed to check → Check all → Completed won. Cada
+    // paso espera a que el elemento exista antes de disparar la accion, con un
+    // settle entre clics para dar tiempo al render AJAX del sitio.
     async function runLibraryAutoCheck() {
         if (runLibraryAutoCheck._started) return;
         runLibraryAutoCheck._started = true;
@@ -2026,28 +2221,50 @@
         showLibraryStatus(T.libClickCompleted);
         fireSiteAction(compTab, 'switchSubSection', [compTab, makeFakeEvent(), 'giveaways-completed-tocheck']);
 
-        // 3) Boton "Check all"
+        // 3) "Completed to check": o existe el boton "Check all" (hay giveaways
+        // por revisar) o la lista esta vacia y el sitio pinta
+        // ".profile-private-page-library-no-results" ("This list is actually
+        // empty."). Esperamos a CUALQUIERA de los dos. En ambos casos seguimos a
+        // "Completed won".
         await libSettle();
-        const checkAll = await waitForElement('a.library-giveaways-check-all-btn', LIB_WAIT_MS);
-        if (!checkAll) { showLibraryStatus(T.libElementNotFound, true); return; }
+        const tocheckState = await waitForElement(
+            'a.library-giveaways-check-all-btn, #giveaways-completed-tocheck .profile-private-page-library-no-results',
+            LIB_WAIT_MS
+        );
+        if (!tocheckState) { showLibraryStatus(T.libElementNotFound, true); return; }
         await libSettle();
-        showLibraryStatus(T.libClickCheckAll);
-        fireSiteAction(checkAll, 'giveawayCheckIfWinnerAll', [checkAll, makeFakeEvent()]);
+        const checkAll = document.querySelector('a.library-giveaways-check-all-btn');
+        if (checkAll) {
+            showLibraryStatus(T.libClickCheckAll);
+            fireSiteAction(checkAll, 'giveawayCheckIfWinnerAll', [checkAll, makeFakeEvent()]);
+            // El "Check all" revisa cada giveaway por AJAX y puede tardar; damos un
+            // margen amplio antes de cambiar de subseccion para no cortarlo.
+            await abortableSleep(rand(3000, 5000));
+        } else {
+            // Lista vacia: nada por revisar. Igual seguimos a "Completed won".
+            showLibraryStatus(T.libNothingToCheck);
+            await libSettle();
+        }
 
-        // 4) Subseccion "Completed won". El "Check all" revisa cada giveaway por
-        // AJAX y puede tardar; damos un margen mas amplio antes de cambiar de
-        // subseccion para no cortar la revision a la mitad.
-        await abortableSleep(rand(3000, 5000));
+        // 4) Subseccion "Completed won".
         const wonTab = await waitForElement('a[onclick*="giveaways-completed-won"]', LIB_WAIT_MS);
         if (!wonTab) { showLibraryStatus(T.libElementNotFound, true); return; }
         await libSettle();
         showLibraryStatus(T.libClickWon);
         fireSiteAction(wonTab, 'switchSubSection', [wonTab, makeFakeEvent(), 'giveaways-completed-won']);
 
-        await abortableSleep(1500);
-        showLibraryStatus(T.libDone);
+        // 5) Esperar a que "Completed won" cargue (filas o lista vacia) y detectar
+        // premios cuya fecha de "Time end" sea hoy; anunciar solo los nuevos.
+        showLibraryStatus(T.libCheckingWon);
+        await waitForElement(
+            '#giveaways-completed-won li.profile-private-sub-section-body, #giveaways-completed-won .profile-private-page-library-no-results',
+            LIB_WAIT_MS
+        );
+        await abortableSleep(rand(800, 1400));
+        announceTodayWins();
+
         const box = document.getElementById(LIB_STATUS_ID);
-        if (box) setTimeout(() => { try { box.remove(); } catch (_) {} }, 6000);
+        if (box) setTimeout(() => { try { box.remove(); } catch (_) {} }, 8000);
     }
 
     // =============================================
