@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
 // @namespace    http://tampermonkey.net/
-// @version      1.4.0
+// @version      1.4.1
 // @description  Anade a Indiegala Giveaways una cola unificada que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo gid, con count por item) ejecutados secuencialmente. Permite añadir/quitar items mientras la cola corre, valida presupuesto restando lo ya comprometido, y usa un Web Worker timer para que las pausas no se inflen cuando la pestaña esta en background. Delays humanizados, control de aborto, boton Continuar tras stop recuperable. Incluye un widget de saldo GalaSilver con boton para abrir tu biblioteca en una pestaña nueva y revisar automaticamente los giveaways completados por ganar (Check all); si "Completed to check" esta vacio lo informa y de todas formas pasa a "Completed won" para detectar premios con fecha de hoy y avisarte (una sola vez por premio). ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -48,7 +48,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.4.0';
+    const SCRIPT_VERSION = '1.4.1';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
@@ -2420,21 +2420,27 @@
                     enqueueExtraOddsFlow(params, title);
                 });
                 host.appendChild(badge);
+
+                // El enlace del titulo deja de navegar al card: ahora abre el flujo
+                // de Extra Odds (igual que el badge ⚠×N) para que un click "por
+                // error" sobre el titulo no abra el giveaway. Guard por dataset para
+                // no re-enganchar si injectListing vuelve a correr sobre el card.
+                if (titleA && !titleA.dataset.igQBound) {
+                    titleA.dataset.igQBound = '1';
+                    titleA.style.cursor = 'pointer';
+                    titleA.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        enqueueExtraOddsFlow(params, title);
+                    });
+                }
             }
 
             // Single Ticket: boton de cola SOLO en /giveaways
             if (isSingleTicket && onListingRoot && !host.querySelector('.' + QBTN_CLASS)) {
-                const btn = document.createElement('div');
-                btn.className = QBTN_CLASS;
-                btn.dataset.gid = params.gid;
-                btn.dataset.price = String(params.price);
-                const inQ = isInQueue(params.gid);
-                btn.classList.toggle('ig-q-btn-active', inQ);
-                btn.textContent = inQ ? T.queueRemoveBtn : T.queueAddBtn;
-                btn.title = inQ ? T.queueRemoveBtnTooltip : T.queueAddBtnTooltip;
-                btn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
+                // Toggle compartido entre el boton ＋ y el enlace del titulo:
+                // si ya esta en cola lo quita; si no, valida presupuesto y lo encola.
+                const toggleQueue = () => {
                     if (isInQueue(params.gid)) {
                         removeFromQueue(params.gid);
                         return;
@@ -2462,8 +2468,36 @@
                         type: 'single',
                         addedAt: Date.now(),
                     });
+                };
+
+                const btn = document.createElement('div');
+                btn.className = QBTN_CLASS;
+                btn.dataset.gid = params.gid;
+                btn.dataset.price = String(params.price);
+                const inQ = isInQueue(params.gid);
+                btn.classList.toggle('ig-q-btn-active', inQ);
+                btn.textContent = inQ ? T.queueRemoveBtn : T.queueAddBtn;
+                btn.title = inQ ? T.queueRemoveBtnTooltip : T.queueAddBtnTooltip;
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggleQueue();
                 });
                 host.appendChild(btn);
+
+                // El enlace del titulo deja de navegar al card: ahora funciona como
+                // el boton ＋ (añade/quita de la cola) para que un click "por error"
+                // sobre el titulo no abra el giveaway. Se marca con dataset para no
+                // re-enganchar si injectListing vuelve a correr sobre el mismo card.
+                if (titleA && !titleA.dataset.igQBound) {
+                    titleA.dataset.igQBound = '1';
+                    titleA.style.cursor = 'pointer';
+                    titleA.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleQueue();
+                    });
+                }
             }
         });
     }
