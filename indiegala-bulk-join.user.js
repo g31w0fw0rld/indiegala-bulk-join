@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
 // @namespace    http://tampermonkey.net/
-// @version      1.4.1
+// @version      1.5.0
 // @description  Anade a Indiegala Giveaways una cola unificada que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo gid, con count por item) ejecutados secuencialmente. Permite añadir/quitar items mientras la cola corre, valida presupuesto restando lo ya comprometido, y usa un Web Worker timer para que las pausas no se inflen cuando la pestaña esta en background. Delays humanizados, control de aborto, boton Continuar tras stop recuperable. Incluye un widget de saldo GalaSilver con boton para abrir tu biblioteca en una pestaña nueva y revisar automaticamente los giveaways completados por ganar (Check all); si "Completed to check" esta vacio lo informa y de todas formas pasa a "Completed won" para detectar premios con fecha de hoy y avisarte (una sola vez por premio). ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -48,7 +48,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.4.1';
+    const SCRIPT_VERSION = '1.5.0';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
@@ -138,6 +138,12 @@
             widgetCheckBtn: '🎁 Revisar premios',
             widgetCheckBtnTooltip: 'Abre tu biblioteca en una pestaña nueva y revisa automáticamente los giveaways completados por ganar (Check all).',
             widgetBalanceUnknown: '— iS',
+            widgetHideEntered: 'Ocultar ya participados',
+            widgetHideEnteredTooltip: 'Oculta del listado los giveaways en los que ya tienes boleto. Se recuerda al recargar hasta que lo desmarques.',
+            widgetMinimize: 'Minimizar widget',
+            widgetRestore: 'Restaurar widget',
+            queueMinimize: 'Minimizar cola',
+            queueRestore: 'Restaurar cola',
             libAutoStart: 'Abriendo biblioteca y revisando premios…',
             libClickGiveaways: 'Abriendo pestaña Giveaways…',
             libClickCompleted: 'Abriendo "Completed to check"…',
@@ -227,6 +233,12 @@
             widgetCheckBtn: '🎁 Check prizes',
             widgetCheckBtnTooltip: 'Opens your library in a new tab and automatically checks completed giveaways to see if you won (Check all).',
             widgetBalanceUnknown: '— iS',
+            widgetHideEntered: 'Hide already entered',
+            widgetHideEnteredTooltip: 'Hides from the listing the giveaways you already hold a ticket in. Remembered across reloads until you uncheck it.',
+            widgetMinimize: 'Minimize widget',
+            widgetRestore: 'Restore widget',
+            queueMinimize: 'Minimize queue',
+            queueRestore: 'Restore queue',
             libAutoStart: 'Opening library and checking prizes…',
             libClickGiveaways: 'Opening Giveaways tab…',
             libClickCompleted: 'Opening "Completed to check"…',
@@ -259,6 +271,11 @@
     };
 
     const STORAGE_KEY = 'ig-st-queue';
+    // Preferencias persistentes del usuario (independientes de la cola):
+    //   hideEntered  -> ocultar del listado los giveaways en los que ya tienes boleto
+    //   balanceMin   -> widget de saldo minimizado
+    //   queueMin     -> panel de cola minimizado
+    const SETTINGS_KEY = 'ig-bulk-settings';
     // gids de giveaways ganados ya anunciados (premios "vistos"), para no
     // re-notificar el mismo premio cada vez que se pulsa "Revisar premios".
     const SEEN_WINS_KEY = 'ig-bulk-seen-wins';
@@ -292,6 +309,7 @@
     let running = false;
     let abortFlag = false;
     let queue = loadQueue();
+    let settings = loadSettings();
 
     // Saldo GalaSilver en memoria. Se inicializa desde el DOM (HTML cargado) la primera
     // vez que se consulta y se decrementa localmente tras cada join exitoso. Al recargar
@@ -351,6 +369,38 @@
             localStorage.setItem(STORAGE_KEY, json);
         } catch (e) {
             console.error('[IG-BulkTools] saveQueue error:', e);
+        }
+    }
+
+    // Preferencias del usuario. Mismo patron de doble persistencia que la cola
+    // (GM_* si esta disponible, con fallback a localStorage) para que sobrevivan
+    // recargas. Defaults conservadores: nada oculto, widgets expandidos.
+    function loadSettings() {
+        const def = { hideEntered: false, balanceMin: false, queueMin: false };
+        try {
+            let raw = null;
+            if (typeof GM_getValue !== 'undefined') {
+                const v = GM_getValue(SETTINGS_KEY, null);
+                if (v && typeof v === 'object' && !Array.isArray(v)) raw = v;
+                else if (typeof v === 'string') { try { raw = JSON.parse(v); } catch (_) { raw = null; } }
+            }
+            if (!raw) {
+                const s = localStorage.getItem(SETTINGS_KEY);
+                raw = s ? JSON.parse(s) : null;
+            }
+            return Object.assign(def, (raw && typeof raw === 'object') ? raw : {});
+        } catch (e) {
+            console.error('[IG-BulkTools] loadSettings error:', e);
+            return def;
+        }
+    }
+    function saveSettings() {
+        try {
+            const json = JSON.stringify(settings);
+            if (typeof GM_setValue !== 'undefined') GM_setValue(SETTINGS_KEY, json);
+            localStorage.setItem(SETTINGS_KEY, json);
+        } catch (e) {
+            console.error('[IG-BulkTools] saveSettings error:', e);
         }
     }
 
@@ -1190,6 +1240,54 @@
                 transition: filter 0.15s;
             }
             #${BALANCE_WIDGET_ID} .ig-bw-btn:hover { filter: brightness(1.15); }
+            /* Header del widget: titulo + boton minimizar en una fila. */
+            #${BALANCE_WIDGET_ID} .ig-bw-head {
+                display: flex; align-items: center; justify-content: space-between;
+                gap: 8px;
+            }
+            #${BALANCE_WIDGET_ID} .ig-bw-min {
+                flex: 0 0 auto;
+                width: 20px; height: 20px;
+                padding: 0; line-height: 18px;
+                border: 1px solid #6a1b9a; border-radius: 4px;
+                background: #2a2a2a; color: #ddd;
+                cursor: pointer; font-size: 13px; font-weight: bold;
+            }
+            #${BALANCE_WIDGET_ID} .ig-bw-min:hover { filter: brightness(1.3); }
+            /* Toggle "Ocultar ya participados". */
+            #${BALANCE_WIDGET_ID} .ig-bw-toggle {
+                display: flex; align-items: center; gap: 6px;
+                font-size: 11px; color: #ddd;
+                margin: 2px 0 8px; cursor: pointer;
+                user-select: none; line-height: 1.2;
+            }
+            #${BALANCE_WIDGET_ID} .ig-bw-toggle input { margin: 0; cursor: pointer; accent-color: #ad1457; }
+            /* Estado minimizado: solo se ve el header. */
+            #${BALANCE_WIDGET_ID}.ig-bw-collapsed .ig-bw-body { display: none; }
+            #${BALANCE_WIDGET_ID}.ig-bw-collapsed { min-width: 0; padding: 6px 10px; }
+
+            /* Ocultar giveaways en los que ya tienes boleto (toggle persistente). */
+            .ig-entered-hidden { display: none !important; }
+
+            /* Header del panel de cola: titulo + boton minimizar. */
+            #${PANEL_ID} .ig-q-head {
+                display: flex; align-items: center; justify-content: space-between;
+                gap: 8px;
+            }
+            #${PANEL_ID} .ig-q-min {
+                flex: 0 0 auto;
+                width: 22px; height: 22px;
+                padding: 0; line-height: 20px;
+                border: 1px solid #6a1b9a; border-radius: 4px;
+                background: #2a2a2a; color: #ddd;
+                cursor: pointer; font-size: 14px; font-weight: bold;
+            }
+            #${PANEL_ID} .ig-q-min:hover { filter: brightness(1.3); }
+            /* Cola minimizada: solo header (titulo + restaurar). */
+            #${PANEL_ID}.ig-q-collapsed .ig-q-warning-bar,
+            #${PANEL_ID}.ig-q-collapsed .ig-q-summary,
+            #${PANEL_ID}.ig-q-collapsed .ig-q-list,
+            #${PANEL_ID}.ig-q-collapsed .ig-q-actions { display: none; }
 
             /* ===== Estado de auto-revision en /library ===== */
             #${LIB_STATUS_ID} {
@@ -1335,9 +1433,11 @@
                 }
                 .ig-toast { max-width: none; min-width: 0; }
 
-                /* Widget de saldo: compacto, arriba a la derecha. */
+                /* Widget de saldo: compacto, arriba a la derecha pero MAS ABAJO
+                   del header para no tapar los controles de usuario del sitio
+                   (avatar / menu) en moviles. Minimizable si aun estorba. */
                 #${BALANCE_WIDGET_ID} {
-                    top: 8px; right: 8px;
+                    top: 64px; right: 8px;
                     padding: 8px 10px;
                     min-width: 0;
                 }
@@ -1871,7 +1971,10 @@
         }).join('');
         panel.innerHTML = `
             <div class="ig-q-warning-bar">${T.warningProgressQueue}</div>
-            <h4>${T.queuePanelTitle}</h4>
+            <div class="ig-q-head">
+                <h4>${T.queuePanelTitle}</h4>
+                <button type="button" id="ig-q-min" class="ig-q-min"></button>
+            </div>
             <div class="ig-q-summary">${fmt(T.queueTotalCost, { n: totalTickets, cost: totalCost })}</div>
             <ul class="ig-q-list">${items}</ul>
             <div class="ig-q-actions">
@@ -1879,6 +1982,12 @@
                 <button id="ig-q-exec"${running ? ' disabled' : ''}>${T.queueExecuteBtn}</button>
             </div>
         `;
+        panel.querySelector('#ig-q-min').addEventListener('click', (e) => {
+            e.preventDefault();
+            settings.queueMin = !settings.queueMin;
+            saveSettings();
+            applyQueueMinState(panel);
+        });
         panel.querySelectorAll('.ig-q-it-rem').forEach(b => {
             b.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -1890,6 +1999,20 @@
             if (ok) clearQueue();
         });
         panel.querySelector('#ig-q-exec').addEventListener('click', executeQueue);
+        applyQueueMinState(panel);
+    }
+
+    // Refleja en el DOM el estado minimizado del panel de cola: colapsa todo
+    // menos el header (titulo + boton restaurar) y ajusta glifo/tooltip. Idempotente.
+    function applyQueueMinState(panel) {
+        if (!panel) return;
+        const min = !!settings.queueMin;
+        panel.classList.toggle('ig-q-collapsed', min);
+        const btn = panel.querySelector('#ig-q-min');
+        if (btn) {
+            btn.textContent = min ? '▢' : '–';
+            btn.title = min ? T.queueRestore : T.queueMinimize;
+        }
     }
 
     function refreshQueueButtonsState() {
@@ -1914,6 +2037,19 @@
     // =============================================
     // WIDGET DE SALDO GALASILVER + REVISAR PREMIOS
     // =============================================
+    // Refleja en el DOM el estado minimizado del widget de saldo: colapsa el
+    // cuerpo (todo menos el header) y ajusta glifo/tooltip del boton. Idempotente.
+    function applyBalanceMinState(w) {
+        if (!w) return;
+        const min = !!settings.balanceMin;
+        w.classList.toggle('ig-bw-collapsed', min);
+        const btn = w.querySelector('#ig-bw-min');
+        if (btn) {
+            btn.textContent = min ? '▢' : '–';
+            btn.title = min ? T.widgetRestore : T.widgetMinimize;
+        }
+    }
+
     // Widget flotante (solo en paginas de giveaways) que muestra el saldo
     // GalaSilver y, debajo, un boton que abre la biblioteca en una pestaña
     // nueva con el flag de auto-revision. Idempotente: crea el nodo la primera
@@ -1931,18 +2067,45 @@
             w = document.createElement('div');
             w.id = BALANCE_WIDGET_ID;
             w.innerHTML = `
-                <div class="ig-bw-title">${T.widgetTitle}</div>
-                <div class="ig-bw-amount" id="ig-bw-amount">${T.widgetBalanceUnknown}</div>
-                <div class="ig-bw-avail" id="ig-bw-avail" style="display:none"></div>
-                <div class="ig-bw-credit" id="ig-bw-credit" style="display:none"></div>
-                <button type="button" class="ig-bw-btn" id="ig-bw-check" title="${escapeHtml(T.widgetCheckBtnTooltip)}">${T.widgetCheckBtn}</button>
+                <div class="ig-bw-head">
+                    <div class="ig-bw-title">${T.widgetTitle}</div>
+                    <button type="button" class="ig-bw-min" id="ig-bw-min"></button>
+                </div>
+                <div class="ig-bw-body">
+                    <div class="ig-bw-amount" id="ig-bw-amount">${T.widgetBalanceUnknown}</div>
+                    <div class="ig-bw-avail" id="ig-bw-avail" style="display:none"></div>
+                    <div class="ig-bw-credit" id="ig-bw-credit" style="display:none"></div>
+                    <label class="ig-bw-toggle" title="${escapeHtml(T.widgetHideEnteredTooltip)}">
+                        <input type="checkbox" id="ig-bw-hide-entered">
+                        <span>${T.widgetHideEntered}</span>
+                    </label>
+                    <button type="button" class="ig-bw-btn" id="ig-bw-check" title="${escapeHtml(T.widgetCheckBtnTooltip)}">${T.widgetCheckBtn}</button>
+                </div>
             `;
             document.body.appendChild(w);
             w.querySelector('#ig-bw-check').addEventListener('click', (e) => {
                 e.preventDefault();
                 window.open(LIBRARY_URL + '#' + AUTOCHECK_HASH, '_blank', 'noopener');
             });
+            // Toggle "Ocultar ya participados": persiste y re-aplica al instante.
+            const hideChk = w.querySelector('#ig-bw-hide-entered');
+            hideChk.addEventListener('change', () => {
+                settings.hideEntered = hideChk.checked;
+                saveSettings();
+                applyHideEntered();
+            });
+            // Minimizar / restaurar el widget (estado persistente).
+            w.querySelector('#ig-bw-min').addEventListener('click', (e) => {
+                e.preventDefault();
+                settings.balanceMin = !settings.balanceMin;
+                saveSettings();
+                applyBalanceMinState(w);
+            });
         }
+        // Sincroniza checkbox y estado minimizado con las preferencias guardadas.
+        const hideChk = w.querySelector('#ig-bw-hide-entered');
+        if (hideChk) hideChk.checked = !!settings.hideEntered;
+        applyBalanceMinState(w);
         const bal = getCurrentBalance();
         const amountEl = w.querySelector('#ig-bw-amount');
         if (amountEl) amountEl.textContent = (bal == null) ? T.widgetBalanceUnknown : (bal + ' iS');
@@ -2373,6 +2536,63 @@
     //   - Extra Odds: badge bulk-join (top-right) en cualquier listado
     //   - Single Ticket: boton de cola (top-left) SOLO en /giveaways
     // =============================================
+    // Regla de "ya tienes boleto" en el listado. El estado JOINEABLE (NO
+    // participado) siempre trae un control para unirse: el boton de accion con
+    // precio (.items-list-item-data-button > a[data-price], que muestra "N iS"
+    // o "JOIN!") y/o el ancla de ticket (a.items-list-item-ticket-click con
+    // onclick joinGiveaway...). Al participar, el sitio QUITA ese boton (o lo
+    // cambia a verde / check). Por eso: si el item YA renderizo sus datos
+    // (items-list-item-data-cont presente) pero NO tiene boton para unirse ->
+    // ya participaste (o no es joineable) -> se oculta.
+    const ENTERED_SELECTORS = [
+        '.items-list-item-data-button.bg-gradient-green',
+        '.items-list-item-ticket-click.on',
+        '.items-list-item-ticket.on',
+        '.items-list-item-data-cont.on',
+    ];
+    // Devuelve true si en este item ya tienes boleto (ya participaste/compraste).
+    // CLAVE (visto en el sitio): la clase `wait` en .items-list-item marca que el
+    // item AUN esta cargando (lazy-load de imagen + datos del ticket). Cuando
+    // termina, se le quita `wait` y entonces:
+    //   - NO participado -> aparece el control para unirse (boton con precio o
+    //     el ancla de ticket con onclick joinGiveaway...).
+    //   - participado     -> NO aparece ningun control (el sitio no renderiza el
+    //     boton porque ya no puedes volver a entrar): queda sin data-cont/boton.
+    function isAlreadyEntered(item) {
+        if (!item) return false;
+        // Aun cargando (lazy-load): no se puede decidir todavia -> no ocultar.
+        if (item.classList.contains('wait')) return false;
+        // (1) Marcador explicito: boton verde / control de ticket "on".
+        for (const sel of ENTERED_SELECTORS) {
+            if (item.querySelector(sel)) return true;
+        }
+        // (2) Check verde visible dentro del area de ticket.
+        const check = item.querySelector('.items-list-item-ticket .fa-check, .items-list-item-data-cont .fa-check');
+        if (check && (check.offsetWidth > 0 || check.offsetHeight > 0)) return true;
+        // (3) Regla principal: ya cargo (sin `wait`) pero NO tiene control para
+        //     unirse -> participado. Joineable = boton con precio O ancla de
+        //     ticket con onclick de join. Si no hay ninguno, se oculta.
+        const joinBtn = item.querySelector('.items-list-item-data-button a[data-price]');
+        const joinClick = item.querySelector('a.items-list-item-ticket-click[onclick*="joinGiveaway"]');
+        if (!joinBtn && !joinClick) return true;
+        return false;
+    }
+
+    // Aplica la preferencia "Ocultar ya participados": esconde (o restaura) la
+    // celda completa (.items-list-col) de cada giveaway en el que ya tienes
+    // boleto. Pasada independiente de injectListing porque los items entrados
+    // pueden no exponer el trigger de join. Se reejecuta en cada injectAll
+    // (disparado por el MutationObserver) para cubrir items cargados por AJAX.
+    function applyHideEntered() {
+        if (isLibrary()) return;
+        const hide = !!settings.hideEntered;
+        document.querySelectorAll('.items-list-item').forEach(item => {
+            const cell = item.closest('.items-list-col') || item;
+            if (hide && isAlreadyEntered(item)) cell.classList.add('ig-entered-hidden');
+            else cell.classList.remove('ig-entered-hidden');
+        });
+    }
+
     function injectListing() {
         const onListingRoot = isListingRoot();
 
@@ -2506,6 +2726,7 @@
         try { injectStyles(); } catch (e) {}
         try { injectCardDetail(); } catch (e) { console.error('[IG-BulkTools] injectCardDetail:', e); }
         try { injectListing(); } catch (e) { console.error('[IG-BulkTools] injectListing:', e); }
+        try { applyHideEntered(); } catch (e) { console.error('[IG-BulkTools] applyHideEntered:', e); }
         try { renderQueuePanel(); } catch (e) { console.error('[IG-BulkTools] renderQueuePanel:', e); }
         // Asegurar que botones recien inyectados reflejen el estado de saldo (deshabilitar
         // los ＋ cuando bal=0). Tambien resincroniza con el DOM si Indiegala actualizo iS.
@@ -2534,7 +2755,11 @@
                 injectAll();
             }, 250);
         });
-        observer.observe(document.body, { childList: true, subtree: true });
+        // attributeFilter:['class'] ademas de childList: cuando un item participado
+        // termina de cargar, el sitio solo le QUITA la clase `wait` (sin agregar
+        // hijos), y applyHideEntered necesita reevaluarlo para ocultarlo. El
+        // debounce de 250ms evita que el filtro de atributos sature.
+        observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     }
 
     // Punto de entrada. En /library NO se monta la cola ni el observador de
