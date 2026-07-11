@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
 // @namespace    http://tampermonkey.net/
-// @version      1.5.0
+// @version      1.6.0
 // @description  Anade a Indiegala Giveaways una cola unificada que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo gid, con count por item) ejecutados secuencialmente. Permite añadir/quitar items mientras la cola corre, valida presupuesto restando lo ya comprometido, y usa un Web Worker timer para que las pausas no se inflen cuando la pestaña esta en background. Delays humanizados, control de aborto, boton Continuar tras stop recuperable. Incluye un widget de saldo GalaSilver con boton para abrir tu biblioteca en una pestaña nueva y revisar automaticamente los giveaways completados por ganar (Check all); si "Completed to check" esta vacio lo informa y de todas formas pasa a "Completed won" para detectar premios con fecha de hoy y avisarte (una sola vez por premio). ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -48,7 +48,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.5.0';
+    const SCRIPT_VERSION = '1.6.0';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
@@ -140,6 +140,8 @@
             widgetBalanceUnknown: '— iS',
             widgetHideEntered: 'Ocultar ya participados',
             widgetHideEnteredTooltip: 'Oculta del listado los giveaways en los que ya tienes boleto. Se recuerda al recargar hasta que lo desmarques.',
+            widgetRememberFilters: 'Recordar filtros de búsqueda',
+            widgetRememberFiltersTooltip: 'Guarda el orden, el filtro de nivel y el texto de búsqueda, y los re-aplica al recargar la página. Se sobrescriben cuando los cambias.',
             widgetMinimize: 'Minimizar widget',
             widgetRestore: 'Restaurar widget',
             queueMinimize: 'Minimizar cola',
@@ -235,6 +237,8 @@
             widgetBalanceUnknown: '— iS',
             widgetHideEntered: 'Hide already entered',
             widgetHideEnteredTooltip: 'Hides from the listing the giveaways you already hold a ticket in. Remembered across reloads until you uncheck it.',
+            widgetRememberFilters: 'Remember search filters',
+            widgetRememberFiltersTooltip: 'Saves the sort order, level filter and search text, and re-applies them when the page reloads. Overwritten whenever you change them.',
             widgetMinimize: 'Minimize widget',
             widgetRestore: 'Restore widget',
             queueMinimize: 'Minimize queue',
@@ -272,9 +276,11 @@
 
     const STORAGE_KEY = 'ig-st-queue';
     // Preferencias persistentes del usuario (independientes de la cola):
-    //   hideEntered  -> ocultar del listado los giveaways en los que ya tienes boleto
-    //   balanceMin   -> widget de saldo minimizado
-    //   queueMin     -> panel de cola minimizado
+    //   hideEntered     -> ocultar del listado los giveaways en los que ya tienes boleto
+    //   balanceMin      -> widget de saldo minimizado
+    //   queueMin        -> panel de cola minimizado
+    //   rememberFilters -> recordar y reaplicar sort/level/busqueda al recargar
+    //   filters         -> { sort, order, level, search } aplicados por el usuario
     const SETTINGS_KEY = 'ig-bulk-settings';
     // gids de giveaways ganados ya anunciados (premios "vistos"), para no
     // re-notificar el mismo premio cada vez que se pulsa "Revisar premios".
@@ -310,6 +316,14 @@
     let abortFlag = false;
     let queue = loadQueue();
     let settings = loadSettings();
+
+    // Filtros persistentes (sort / level / busqueda). filtersReady se vuelve true
+    // solo despues de intentar reaplicar los filtros guardados al cargar, para que
+    // captureFilters() no sobreescriba las preferencias con el estado por defecto
+    // que el servidor renderiza. reapplyInProgress silencia la captura mientras se
+    // disparan las recargas AJAX de la reaplicacion.
+    let filtersReady = false;
+    let reapplyInProgress = false;
 
     // Saldo GalaSilver en memoria. Se inicializa desde el DOM (HTML cargado) la primera
     // vez que se consulta y se decrementa localmente tras cada join exitoso. Al recargar
@@ -376,7 +390,12 @@
     // (GM_* si esta disponible, con fallback a localStorage) para que sobrevivan
     // recargas. Defaults conservadores: nada oculto, widgets expandidos.
     function loadSettings() {
-        const def = { hideEntered: false, balanceMin: false, queueMin: false };
+        const def = {
+            hideEntered: false, balanceMin: false, queueMin: false,
+            // Recordar filtros de busqueda del listado (sort/level/texto).
+            rememberFilters: false,
+            filters: { sort: 'expiry', order: 'asc', level: 'all', search: '' },
+        };
         try {
             let raw = null;
             if (typeof GM_getValue !== 'undefined') {
@@ -2079,6 +2098,10 @@
                         <input type="checkbox" id="ig-bw-hide-entered">
                         <span>${T.widgetHideEntered}</span>
                     </label>
+                    <label class="ig-bw-toggle" title="${escapeHtml(T.widgetRememberFiltersTooltip)}">
+                        <input type="checkbox" id="ig-bw-remember-filters">
+                        <span>${T.widgetRememberFilters}</span>
+                    </label>
                     <button type="button" class="ig-bw-btn" id="ig-bw-check" title="${escapeHtml(T.widgetCheckBtnTooltip)}">${T.widgetCheckBtn}</button>
                 </div>
             `;
@@ -2094,6 +2117,14 @@
                 saveSettings();
                 applyHideEntered();
             });
+            // Toggle "Recordar filtros de busqueda": al activarlo, snapshotea el
+            // estado actual para que sobreviva la proxima recarga.
+            const remChk = w.querySelector('#ig-bw-remember-filters');
+            remChk.addEventListener('change', () => {
+                settings.rememberFilters = remChk.checked;
+                saveSettings();
+                if (remChk.checked) { try { captureFilters(true); } catch (_) {} }
+            });
             // Minimizar / restaurar el widget (estado persistente).
             w.querySelector('#ig-bw-min').addEventListener('click', (e) => {
                 e.preventDefault();
@@ -2105,6 +2136,8 @@
         // Sincroniza checkbox y estado minimizado con las preferencias guardadas.
         const hideChk = w.querySelector('#ig-bw-hide-entered');
         if (hideChk) hideChk.checked = !!settings.hideEntered;
+        const remChk = w.querySelector('#ig-bw-remember-filters');
+        if (remChk) remChk.checked = !!settings.rememberFilters;
         applyBalanceMinState(w);
         const bal = getCurrentBalance();
         const amountEl = w.querySelector('#ig-bw-amount');
@@ -2722,11 +2755,202 @@
         });
     }
 
+    // =============================================
+    // FILTROS PERSISTENTES (sort / level / busqueda)
+    // =============================================
+    // El servidor renderiza /giveaways siempre con los defaults (expiry/asc, todos
+    // los niveles, sin busqueda) porque no conoce nuestras preferencias locales.
+    // Con "Recordar filtros" activo: captureFilters() guarda lo que el usuario
+    // aplica y reapplyFilters() lo vuelve a disparar al cargar, replicando los
+    // gestos del propio sitio (setSortOrder/setLevel + keyup en la caja de busqueda)
+    // para no depender de nombres internos de funciones de recarga.
+    const FILTER_DEFAULTS = { sort: 'expiry', order: 'asc', level: 'all', search: '' };
+
+    function uw() { return (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window; }
+
+    // Preferencias guardadas normalizadas (con defaults por si falta alguna clave).
+    function getSavedFilters() {
+        const f = (settings.filters && typeof settings.filters === 'object') ? settings.filters : {};
+        return {
+            sort: f.sort || FILTER_DEFAULTS.sort,
+            order: f.order || FILTER_DEFAULTS.order,
+            level: (f.level != null && f.level !== '') ? String(f.level) : FILTER_DEFAULTS.level,
+            search: (typeof f.search === 'string') ? f.search : '',
+        };
+    }
+
+    // Sort/orden desde el DOM (el ancla seleccionada del menu). El caret hacia
+    // arriba = asc, hacia abajo = desc. Fallback cuando no hay globales del sitio.
+    function readSortFromDom() {
+        const sel = document.querySelector('.page-contents-list-menu-sort a.selected');
+        if (!sel) return null;
+        let sort = sel.getAttribute('data-rel');
+        if (!sort) {
+            const m = (sel.getAttribute('onclick') || '').match(/setSortOrder\(\s*'([^']+)'/);
+            if (m) sort = m[1];
+        }
+        if (!sort) return null;
+        const order = sel.querySelector('i.fa-caret-down') ? 'desc' : 'asc';
+        return { sort, order };
+    }
+
+    // Nivel desde el DOM (etiqueta del submenu de nivel). Fallback sin globales.
+    function readLevelFromDom() {
+        const span = document.querySelector('.page-contents-list-submenu-current-level span');
+        if (!span) return null;
+        const t = (span.textContent || '').trim().toLowerCase();
+        if (/all/.test(t)) return 'all';
+        const m = t.match(/(\d+)/);
+        return m ? m[1] : null;
+    }
+
+    // Estado de filtros que el sitio tiene AHORA. Prioriza las globales que el
+    // sitio mantiene (sortParam/sortOrderParam/levelParam), cae al DOM, y siempre
+    // lee el texto de la caja de busqueda.
+    function readSiteFilters() {
+        const w = uw();
+        const f = Object.assign({}, FILTER_DEFAULTS);
+        let gotSort = false, gotOrder = false, gotLevel = false;
+        try {
+            if (typeof w.sortParam === 'string' && w.sortParam) { f.sort = w.sortParam; gotSort = true; }
+            if (typeof w.sortOrderParam === 'string' && w.sortOrderParam) { f.order = w.sortOrderParam; gotOrder = true; }
+            if (w.levelParam != null && w.levelParam !== '') { f.level = String(w.levelParam); gotLevel = true; }
+        } catch (_) {}
+        if (!gotSort || !gotOrder) {
+            const d = readSortFromDom();
+            if (d) { if (!gotSort) f.sort = d.sort; if (!gotOrder) f.order = d.order; }
+        }
+        if (!gotLevel) {
+            const l = readLevelFromDom();
+            if (l != null) f.level = l;
+        }
+        const box = document.getElementById('search-box');
+        if (box) f.search = (box.value || '').trim();
+        return f;
+    }
+
+    // Guarda el estado actual si difiere del guardado. Silenciada hasta que la
+    // reaplicacion inicial termina (para no pisar preferencias con los defaults)
+    // salvo que se fuerce (al activar el toggle, cuando ya estamos estables).
+    function captureFilters(force) {
+        if (!settings.rememberFilters) return;
+        if (!isListingRoot()) return;
+        if (!force && (!filtersReady || reapplyInProgress)) return;
+        const cur = readSiteFilters();
+        const saved = getSavedFilters();
+        if (cur.sort === saved.sort && cur.order === saved.order &&
+            cur.level === saved.level && cur.search === saved.search) return;
+        settings.filters = cur;
+        saveSettings();
+    }
+
+    function findSortAnchor(sort) {
+        const byRel = document.querySelector(`.page-contents-list-menu-sort a[data-rel="${sort}"]`);
+        if (byRel) return byRel;
+        return Array.from(document.querySelectorAll('.page-contents-list-menu-sort a[onclick*="setSortOrder"]'))
+            .find(a => (a.getAttribute('onclick') || '').includes(`setSortOrder('${sort}'`)) || null;
+    }
+
+    function findLevelAnchor(level) {
+        const want = `setLevel('${level}'`;
+        return Array.from(document.querySelectorAll('.page-contents-list-submenu-level a[onclick*="setLevel"]'))
+            .find(a => (a.getAttribute('onclick') || '').includes(want)) || null;
+    }
+
+    // Evento sintetico minimo para las funciones del sitio (usan preventDefault).
+    function synthEvent() {
+        return { preventDefault() {}, stopPropagation() {}, target: null, currentTarget: null };
+    }
+
+    // Espera a que la recarga AJAX del listado termine: el sitio muestra
+    // .page-contents-ajax-list-cover mientras carga. Da un margen inicial para
+    // que arranque, luego sondea hasta que la tapa se oculta (con timeout duro).
+    function waitListSettle(timeoutMs) {
+        const limit = timeoutMs || 6000;
+        return new Promise((resolve) => {
+            const deadline = Date.now() + limit;
+            setTimeout(function tick() {
+                const c = document.querySelector('.page-contents-ajax-list-cover');
+                const visible = c && window.getComputedStyle(c).display !== 'none';
+                if (!visible || Date.now() > deadline) { setTimeout(resolve, 200); return; }
+                setTimeout(tick, 150);
+            }, 250);
+        });
+    }
+
+    // Reaplica los filtros guardados replicando los gestos del sitio, en secuencia
+    // (nivel -> orden -> busqueda) esperando a que cada recarga AJAX asiente para
+    // que la siguiente parta del estado ya aplicado. Marca filtersReady al final
+    // para habilitar la captura de cambios posteriores del usuario.
+    async function reapplyFilters() {
+        try {
+            if (!settings.rememberFilters || !isListingRoot()) return;
+            const want = getSavedFilters();
+            // Nada que hacer si coincide con los defaults del render del servidor.
+            const isDefault = want.sort === FILTER_DEFAULTS.sort && want.order === FILTER_DEFAULTS.order &&
+                want.level === FILTER_DEFAULTS.level && !want.search;
+            if (isDefault) return;
+
+            await waitForElement('.page-contents-list-menu', 8000);
+            reapplyInProgress = true;
+
+            // LEVEL
+            if (String(want.level) !== String(readSiteFilters().level)) {
+                const lvlA = findLevelAnchor(want.level);
+                if (lvlA) { fireSiteAction(lvlA, 'setLevel', [String(want.level), lvlA, synthEvent()]); await waitListSettle(); }
+            }
+
+            // SORT (dos pasos: primero fijar el criterio, luego alternar el orden
+            // observando el resultado real, porque el orden por defecto de cada
+            // criterio lo decide el sitio).
+            let st = readSiteFilters();
+            if (st.sort !== want.sort) {
+                const a = findSortAnchor(want.sort);
+                if (a) { fireSiteAction(a, 'setSortOrder', [want.sort, a, synthEvent()]); await waitListSettle(); st = readSiteFilters(); }
+            }
+            if (st.sort === want.sort && st.order !== want.order) {
+                const a = findSortAnchor(want.sort);
+                if (a) { fireSiteAction(a, 'setSortOrder', [want.sort, a, synthEvent()]); await waitListSettle(); }
+            }
+
+            // SEARCH: rellena la caja y dispara los eventos que el sitio escucha.
+            if (want.search) {
+                const box = document.getElementById('search-box');
+                if (box) {
+                    box.value = want.search;
+                    box.dispatchEvent(new Event('input', { bubbles: true }));
+                    box.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a' }));
+                    await waitListSettle();
+                }
+            }
+        } catch (e) {
+            console.error('[IG-BulkTools] reapplyFilters:', e);
+        } finally {
+            reapplyInProgress = false;
+            filtersReady = true;
+        }
+    }
+
+    // Engancha (una vez) la captura del texto de busqueda al teclear, con debounce,
+    // porque escribir no siempre muta el listado de inmediato.
+    function bindSearchCapture() {
+        const box = document.getElementById('search-box');
+        if (!box || box.dataset.igFilterBound) return;
+        box.dataset.igFilterBound = '1';
+        let t = null;
+        box.addEventListener('input', () => {
+            if (t) clearTimeout(t);
+            t = setTimeout(() => { try { captureFilters(); } catch (_) {} }, 500);
+        });
+    }
+
     function injectAll() {
         try { injectStyles(); } catch (e) {}
         try { injectCardDetail(); } catch (e) { console.error('[IG-BulkTools] injectCardDetail:', e); }
         try { injectListing(); } catch (e) { console.error('[IG-BulkTools] injectListing:', e); }
         try { applyHideEntered(); } catch (e) { console.error('[IG-BulkTools] applyHideEntered:', e); }
+        try { bindSearchCapture(); } catch (e) {}
+        try { captureFilters(); } catch (e) { console.error('[IG-BulkTools] captureFilters:', e); }
         try { renderQueuePanel(); } catch (e) { console.error('[IG-BulkTools] renderQueuePanel:', e); }
         // Asegurar que botones recien inyectados reflejen el estado de saldo (deshabilitar
         // los ＋ cuando bal=0). Tambien resincroniza con el DOM si Indiegala actualizo iS.
@@ -2775,6 +2999,9 @@
             return;
         }
         startObserver();
+        // Reaplicar filtros guardados (sort/level/busqueda) tras el render inicial.
+        // Habilita la captura de cambios posteriores (marca filtersReady al terminar).
+        reapplyFilters();
         // Vigilante de Wheel of Fortune (se auto-limita a /giveaways listado raiz).
         startWheelWatcher();
     }
