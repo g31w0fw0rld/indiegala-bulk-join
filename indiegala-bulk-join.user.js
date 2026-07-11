@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
 // @namespace    http://tampermonkey.net/
-// @version      1.6.0
+// @version      1.6.1
 // @description  Anade a Indiegala Giveaways una cola unificada que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo gid, con count por item) ejecutados secuencialmente. Permite añadir/quitar items mientras la cola corre, valida presupuesto restando lo ya comprometido, y usa un Web Worker timer para que las pausas no se inflen cuando la pestaña esta en background. Delays humanizados, control de aborto, boton Continuar tras stop recuperable. Incluye un widget de saldo GalaSilver con boton para abrir tu biblioteca en una pestaña nueva y revisar automaticamente los giveaways completados por ganar (Check all); si "Completed to check" esta vacio lo informa y de todas formas pasa a "Completed won" para detectar premios con fecha de hoy y avisarte (una sola vez por premio). ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -48,7 +48,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.6.0';
+    const SCRIPT_VERSION = '1.6.1';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
@@ -141,7 +141,7 @@
             widgetHideEntered: 'Ocultar ya participados',
             widgetHideEnteredTooltip: 'Oculta del listado los giveaways en los que ya tienes boleto. Se recuerda al recargar hasta que lo desmarques.',
             widgetRememberFilters: 'Recordar filtros de búsqueda',
-            widgetRememberFiltersTooltip: 'Guarda el orden, el filtro de nivel y el texto de búsqueda, y los re-aplica al recargar la página. Se sobrescriben cuando los cambias.',
+            widgetRememberFiltersTooltip: 'Guarda el orden, el filtro de nivel, el texto de búsqueda y la página actual, y los re-aplica al recargar. Se sobrescriben cuando los cambias. Si la página guardada ya no existe, vuelve a la 1.',
             widgetMinimize: 'Minimizar widget',
             widgetRestore: 'Restaurar widget',
             queueMinimize: 'Minimizar cola',
@@ -238,7 +238,7 @@
             widgetHideEntered: 'Hide already entered',
             widgetHideEnteredTooltip: 'Hides from the listing the giveaways you already hold a ticket in. Remembered across reloads until you uncheck it.',
             widgetRememberFilters: 'Remember search filters',
-            widgetRememberFiltersTooltip: 'Saves the sort order, level filter and search text, and re-applies them when the page reloads. Overwritten whenever you change them.',
+            widgetRememberFiltersTooltip: 'Saves the sort order, level filter, search text and current page, and re-applies them on reload. Overwritten whenever you change them. Falls back to page 1 if the saved page no longer exists.',
             widgetMinimize: 'Minimize widget',
             widgetRestore: 'Restore widget',
             queueMinimize: 'Minimize queue',
@@ -280,7 +280,7 @@
     //   balanceMin      -> widget de saldo minimizado
     //   queueMin        -> panel de cola minimizado
     //   rememberFilters -> recordar y reaplicar sort/level/busqueda al recargar
-    //   filters         -> { sort, order, level, search } aplicados por el usuario
+    //   filters         -> { sort, order, level, search, page } aplicados por el usuario
     const SETTINGS_KEY = 'ig-bulk-settings';
     // gids de giveaways ganados ya anunciados (premios "vistos"), para no
     // re-notificar el mismo premio cada vez que se pulsa "Revisar premios".
@@ -394,7 +394,7 @@
             hideEntered: false, balanceMin: false, queueMin: false,
             // Recordar filtros de busqueda del listado (sort/level/texto).
             rememberFilters: false,
-            filters: { sort: 'expiry', order: 'asc', level: 'all', search: '' },
+            filters: { sort: 'expiry', order: 'asc', level: 'all', search: '', page: 1 },
         };
         try {
             let raw = null;
@@ -2764,7 +2764,7 @@
     // aplica y reapplyFilters() lo vuelve a disparar al cargar, replicando los
     // gestos del propio sitio (setSortOrder/setLevel + keyup en la caja de busqueda)
     // para no depender de nombres internos de funciones de recarga.
-    const FILTER_DEFAULTS = { sort: 'expiry', order: 'asc', level: 'all', search: '' };
+    const FILTER_DEFAULTS = { sort: 'expiry', order: 'asc', level: 'all', search: '', page: 1 };
 
     function uw() { return (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window; }
 
@@ -2776,6 +2776,7 @@
             order: f.order || FILTER_DEFAULTS.order,
             level: (f.level != null && f.level !== '') ? String(f.level) : FILTER_DEFAULTS.level,
             search: (typeof f.search === 'string') ? f.search : '',
+            page: (parseInt(f.page, 10) > 0) ? parseInt(f.page, 10) : 1,
         };
     }
 
@@ -2826,7 +2827,55 @@
         }
         const box = document.getElementById('search-box');
         if (box) f.search = (box.value || '').trim();
+        const pg = readCurrentPage();
+        if (pg != null) f.page = pg;
         return f;
+    }
+
+    // Pagina actual del listado: el sitio marca la activa con .pagination .current.
+    // Fallback a la global pageParam si la barra no esta renderizada.
+    function readCurrentPage() {
+        const cur = document.querySelector('.pagination .current');
+        if (cur) { const n = parseInt((cur.textContent || '').trim(), 10); if (!isNaN(n)) return n; }
+        try { const p = parseInt(uw().pageParam, 10); if (!isNaN(p)) return p; } catch (_) {}
+        return null;
+    }
+
+    // Construye la URL AJAX de una pagina copiando el href de un ancla real de
+    // paginacion y sustituyendo SOLO el numero de pagina (no adivina el formato:
+    // conserva sort/order/level tal como los tiene el sitio ahora mismo). Devuelve
+    // null si no hay barra de paginacion (una sola pagina de resultados).
+    function pageUrlFromDom(page) {
+        const a = document.querySelector('.pagination a[href*="/giveaways/ajax/"]');
+        if (!a) return null;
+        const href = a.getAttribute('href') || '';
+        if (!/\/giveaways\/ajax\/\d+\//.test(href)) return null;
+        return href.replace(/(\/giveaways\/ajax\/)\d+(\/)/, (m, pre, post) => pre + page + post);
+    }
+
+    // Navega a la pagina guardada disparando el loader canonico del sitio
+    // (loadGiveawaysListContents con la URL AJAX). Si tras cargar la pagina no
+    // existe (fuera de rango => sin items o el .current no coincide), vuelve a la 1.
+    async function applyPage(page) {
+        const url = pageUrlFromDom(page);
+        if (!url) return; // una sola pagina: nada que reaplicar
+        const w = uw();
+        if (typeof w.loadGiveawaysListContents !== 'function') {
+            // Fallback: click en el ancla exacta si esta en la ventana visible.
+            const exact = Array.from(document.querySelectorAll('.pagination a[href*="/giveaways/ajax/"]'))
+                .find(x => (x.getAttribute('href') || '') === url);
+            if (exact) { exact.click(); await waitListSettle(); }
+            return;
+        }
+        try { w.loadGiveawaysListContents(url); } catch (_) { return; }
+        await waitListSettle();
+        const reached = readCurrentPage();
+        const hasItems = !!document.querySelector('.page-contents-list .items-list-item');
+        if (!hasItems || (reached != null && reached !== page)) {
+            const url1 = url.replace(/(\/giveaways\/ajax\/)\d+(\/)/, (m, pre, post) => pre + '1' + post);
+            try { w.loadGiveawaysListContents(url1); } catch (_) {}
+            await waitListSettle();
+        }
     }
 
     // Guarda el estado actual si difiere del guardado. Silenciada hasta que la
@@ -2839,7 +2888,8 @@
         const cur = readSiteFilters();
         const saved = getSavedFilters();
         if (cur.sort === saved.sort && cur.order === saved.order &&
-            cur.level === saved.level && cur.search === saved.search) return;
+            cur.level === saved.level && cur.search === saved.search &&
+            cur.page === saved.page) return;
         settings.filters = cur;
         saveSettings();
     }
@@ -2888,7 +2938,7 @@
             const want = getSavedFilters();
             // Nada que hacer si coincide con los defaults del render del servidor.
             const isDefault = want.sort === FILTER_DEFAULTS.sort && want.order === FILTER_DEFAULTS.order &&
-                want.level === FILTER_DEFAULTS.level && !want.search;
+                want.level === FILTER_DEFAULTS.level && !want.search && (want.page || 1) <= 1;
             if (isDefault) return;
 
             await waitForElement('.page-contents-list-menu', 8000);
@@ -2911,6 +2961,14 @@
             if (st.sort === want.sort && st.order !== want.order) {
                 const a = findSortAnchor(want.sort);
                 if (a) { fireSiteAction(a, 'setSortOrder', [want.sort, a, synthEvent()]); await waitListSettle(); }
+            }
+
+            // PAGE: solo cuando NO hay busqueda (buscar colapsa el listado a la
+            // pagina 1, y la URL AJAX de paginacion no lleva termino de busqueda).
+            // Se aplica al final de sort/level para que la barra ya refleje esos
+            // filtros al copiar el href.
+            if (!want.search && (want.page || 1) > 1) {
+                await applyPage(want.page);
             }
 
             // SEARCH: rellena la caja y dispara los eventos que el sitio escucha.
