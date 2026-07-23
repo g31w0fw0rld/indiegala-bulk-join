@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
 // @namespace    http://tampermonkey.net/
-// @version      1.6.1
+// @version      1.7.0
 // @description  Anade a Indiegala Giveaways una cola unificada que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo gid, con count por item) ejecutados secuencialmente. Permite añadir/quitar items mientras la cola corre, valida presupuesto restando lo ya comprometido, y usa un Web Worker timer para que las pausas no se inflen cuando la pestaña esta en background. Delays humanizados, control de aborto, boton Continuar tras stop recuperable. Incluye un widget de saldo GalaSilver con boton para abrir tu biblioteca en una pestaña nueva y revisar automaticamente los giveaways completados por ganar (Check all); si "Completed to check" esta vacio lo informa y de todas formas pasa a "Completed won" para detectar premios con fecha de hoy y avisarte (una sola vez por premio). ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -48,7 +48,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.6.1';
+    const SCRIPT_VERSION = '1.7.0';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
@@ -61,7 +61,15 @@
     // INTERNACIONALIZACION (i18n)
     // =============================================
 
-    const userLang = (navigator.language || 'en').split('-')[0];
+    // Auto-deteccion de idioma: prioriza el lang del documento (idioma con que
+    // Indiegala sirve la pagina) y cae al del navegador. Solo distingue espanol
+    // vs. resto (ingles por defecto).
+    function detectLang() {
+        const docLang = (document.documentElement.getAttribute('lang') || '').toLowerCase();
+        const navLang = (navigator.language || navigator.languages?.[0] || '').toLowerCase();
+        return (docLang || navLang).startsWith('es') ? 'es' : 'en';
+    }
+    const LANG = detectLang();
     const i18n = {
         es: {
             // Bulk join (Extra Odds)
@@ -258,7 +266,7 @@
             wheelAvailableAlert: '🎡 The Wheel of Fortune changed state (it may be available to spin)! Go attend it now so you don\'t miss it.',
         },
     };
-    const T = i18n[userLang] || i18n.en;
+    const T = i18n[LANG] || i18n.en;
     const fmt = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? vars[k] : ''));
 
     // =============================================
