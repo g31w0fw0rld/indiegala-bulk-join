@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
 // @namespace    http://tampermonkey.net/
-// @version      1.7.1
+// @version      1.7.2
 // @description  Anade a Indiegala Giveaways una cola unificada que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo gid, con count por item) ejecutados secuencialmente. Permite añadir/quitar items mientras la cola corre, valida presupuesto restando lo ya comprometido, y usa un Web Worker timer para que las pausas no se inflen cuando la pestaña esta en background. Delays humanizados, control de aborto, boton Continuar tras stop recuperable. Incluye un widget de saldo GalaSilver con boton para abrir tu biblioteca en una pestaña nueva y revisar automaticamente los giveaways completados por ganar (Check all); si "Completed to check" esta vacio lo informa y de todas formas pasa a "Completed won" para detectar premios con fecha de hoy y avisarte (una sola vez por premio). ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -48,7 +48,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.7.1';
+    const SCRIPT_VERSION = '1.7.2';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
@@ -70,7 +70,22 @@
             .filter(Boolean).map((l) => l.toLowerCase());
         return langs.some((l) => l.startsWith('es')) ? 'es' : 'en';
     }
-    const LANG = detectLang();
+    // Preferencia MANUAL de idioma del script (por encima de la autodetección).
+    // 'es' | 'en' | '' (auto). Indiegala no tiene versiones de sitio por idioma,
+    // así que esto solo cambia el idioma de ESTE script.
+    const LANG_PREF_KEY = 'ig-bulktools-lang';
+    function readLangPref() {
+        try { const v = localStorage.getItem(LANG_PREF_KEY); return (v === 'es' || v === 'en') ? v : ''; }
+        catch (e) { return ''; }
+    }
+    function saveLangPref(v) {
+        try {
+            if (v === 'es' || v === 'en') localStorage.setItem(LANG_PREF_KEY, v);
+            else localStorage.removeItem(LANG_PREF_KEY);
+        } catch (e) { /* almacenamiento no disponible */ }
+    }
+    const LANG_PREF = readLangPref();
+    const LANG = LANG_PREF || detectLang();
     const i18n = {
         es: {
             // Bulk join (Extra Odds)
@@ -269,6 +284,46 @@
     };
     const T = i18n[LANG] || i18n.en;
     const fmt = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? vars[k] : ''));
+
+    // Textos extra (selector de idioma + "Saber más"). Se mantienen aparte del
+    // objeto i18n (enorme) para no tocarlo. TX se resuelve con el mismo LANG.
+    const EXTRA_I18N = {
+        es: {
+            about: 'ℹ️ Saber más', close: 'Cerrar',
+            langLabel: 'Idioma del script:', langAuto: 'Auto (navegador)',
+            langTip: 'Idioma de ESTE script (no cambia el idioma de Indiegala, que no tiene versiones por idioma). "Auto" usa el idioma de tu navegador. Al cambiarlo se recarga la página.',
+            aboutTip: 'Ver qué hace este script en su totalidad.',
+            aboutTitle: '¿Qué hace este script?',
+            aboutBody: [
+                '⚠️ USO BAJO TU PROPIO RIESGO: automatizar compras viola la política anti-spam de Indiegala y puede causar ban permanente.',
+                'Este script añade a Indiegala Giveaways una cola unificada de compra de boletos:',
+                '• Mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo giveaway) y los ejecuta en secuencia.',
+                '• Permite añadir/quitar items mientras la cola corre y valida el presupuesto restando lo ya comprometido.',
+                '• Usa un temporizador en Web Worker para que las pausas no se inflen con la pestaña en segundo plano; delays humanizados y control de aborto (con botón Continuar tras parar).',
+                '• Widget de saldo GalaSilver con botón para abrir tu biblioteca y revisar automáticamente los giveaways completados (Check all) y avisarte de premios ganados hoy.',
+                '• Opciones: ocultar los ya participados, recordar filtros de búsqueda y elegir el idioma del script.',
+                'Todo se procesa en tu navegador; no se envían datos a terceros.',
+            ],
+        },
+        en: {
+            about: 'ℹ️ Learn more', close: 'Close',
+            langLabel: 'Script language:', langAuto: 'Auto (browser)',
+            langTip: 'Language of THIS script (it does not change Indiegala\'s language, which has no per-language versions). "Auto" uses your browser language. Changing it reloads the page.',
+            aboutTip: 'See everything this script does.',
+            aboutTitle: 'What does this script do?',
+            aboutBody: [
+                '⚠️ USE AT YOUR OWN RISK: automating purchases violates Indiegala\'s anti-spam policy and may cause a permanent ban.',
+                'This script adds a unified ticket-purchase queue to Indiegala Giveaways:',
+                '• Mixes "Single Ticket" (1 ticket) and "Extra Odds" (N tickets of the same giveaway) and runs them in sequence.',
+                '• Lets you add/remove items while the queue runs and validates your budget by subtracting what is already committed.',
+                '• Uses a Web Worker timer so pauses do not inflate when the tab is in the background; humanized delays and abort control (with a Continue button after stopping).',
+                '• GalaSilver balance widget with a button to open your library and automatically check completed giveaways (Check all) and notify you of prizes won today.',
+                '• Options: hide already-entered giveaways, remember search filters, and choose the script language.',
+                'Everything runs in your browser; no data is sent to third parties.',
+            ],
+        },
+    };
+    const TX = EXTRA_I18N[LANG] || EXTRA_I18N.en;
 
     // =============================================
     // CONFIG
@@ -1268,6 +1323,14 @@
                 transition: filter 0.15s;
             }
             #${BALANCE_WIDGET_ID} .ig-bw-btn:hover { filter: brightness(1.15); }
+            /* "Saber más": estilo outline (distinto del gradiente) y separado del boton de arriba. */
+            #${BALANCE_WIDGET_ID} .ig-bw-about {
+                margin-top: 10px;
+                background: transparent;
+                color: #c88bff;
+                border: 1px solid #b14cff;
+            }
+            #${BALANCE_WIDGET_ID} .ig-bw-about:hover { background: rgba(177,76,255,0.15); filter: none; }
             /* Header del widget: titulo + boton minimizar en una fila. */
             #${BALANCE_WIDGET_ID} .ig-bw-head {
                 display: flex; align-items: center; justify-content: space-between;
@@ -2083,6 +2146,81 @@
     // nueva con el flag de auto-revision. Idempotente: crea el nodo la primera
     // vez y solo refresca textos en llamadas posteriores. Se llama desde
     // injectAll (periodico) y desde los puntos donde cambia el saldo.
+
+    // --- Modal "Saber más" (autocontenido) --------------------------------------
+    function showAboutModal() {
+        if (document.getElementById('ig-about-overlay')) return;
+        const overlay = document.createElement('div');
+        overlay.id = 'ig-about-overlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', inset: '0', width: '100%', height: '100%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0,0,0,0.6)', zIndex: '2147483647',
+            transition: 'opacity 180ms ease', opacity: '0',
+        });
+        const box = document.createElement('div');
+        Object.assign(box.style, {
+            background: '#1b1230', color: '#f3eefb', borderRadius: '14px',
+            padding: '26px 30px', minWidth: '320px', maxWidth: '580px',
+            maxHeight: '80vh', overflowY: 'auto', boxSizing: 'border-box',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.5)', border: '1px solid #b14cff',
+            fontFamily: 'system-ui, sans-serif', fontSize: '14px', lineHeight: '1.5',
+            transform: 'translateY(8px) scale(0.98)', opacity: '0',
+            transition: 'transform 180ms ease, opacity 180ms ease',
+        });
+        const title = document.createElement('div');
+        title.textContent = TX.aboutTitle;
+        title.style.cssText = 'font-weight:bold;font-size:17px;margin-bottom:14px;color:#c88bff;';
+        box.appendChild(title);
+        (TX.aboutBody || []).forEach((p) => {
+            const row = document.createElement('div');
+            const trimmed = String(p).replace(/^\s+/, '');
+            row.textContent = trimmed;
+            row.style.marginBottom = '8px';
+            if (trimmed.startsWith('•')) row.style.paddingLeft = '10px';
+            if (trimmed.startsWith('⚠')) { row.style.color = '#ffcf66'; row.style.fontWeight = '600'; }
+            box.appendChild(row);
+        });
+        const gh = document.createElement('a');
+        gh.href = 'https://github.com/g31w0fw0rld/indiegala-bulk-join';
+        gh.target = '_blank'; gh.rel = 'noopener';
+        gh.textContent = 'github.com/g31w0fw0rld/indiegala-bulk-join';
+        gh.style.cssText = 'display:inline-block;margin-top:6px;color:#c88bff;text-decoration:underline;font-size:12px;';
+        box.appendChild(gh);
+        const kofi = document.createElement('a');
+        kofi.href = 'https://ko-fi.com/g31w0fw0rld';
+        kofi.target = '_blank'; kofi.rel = 'noopener';
+        kofi.textContent = '☕ Apóyame en Ko-fi / Support me on Ko-fi';
+        kofi.style.cssText = 'display:block;margin-top:8px;color:#c88bff;text-decoration:underline;font-size:12px;';
+        box.appendChild(kofi);
+        const foot = document.createElement('div');
+        foot.textContent = 'v' + SCRIPT_VERSION + ' · g31w0fw0rld';
+        foot.style.cssText = 'margin-top:2px;font-size:12px;opacity:0.7;';
+        box.appendChild(foot);
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.textContent = TX.close;
+        closeBtn.style.cssText = 'display:block;margin-top:16px;padding:8px 14px;background:#b14cff;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:bold;font-size:13px;';
+        box.appendChild(closeBtn);
+        const closeIt = () => {
+            overlay.style.opacity = '0'; box.style.opacity = '0';
+            box.style.transform = 'translateY(8px) scale(0.98)';
+            document.removeEventListener('keydown', onKey);
+            setTimeout(() => overlay.remove(), 180);
+        };
+        const onKey = (e) => { if (e.key === 'Escape') closeIt(); };
+        closeBtn.addEventListener('click', closeIt);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) closeIt(); });
+        document.addEventListener('keydown', onKey);
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+        setTimeout(() => {
+            overlay.style.opacity = '1';
+            box.style.transform = 'translateY(0) scale(1)';
+            box.style.opacity = '1';
+        }, 10);
+    }
+
     function renderBalanceWidget() {
         if (isLibrary()) {
             const ex = document.getElementById(BALANCE_WIDGET_ID);
@@ -2092,6 +2230,11 @@
         if (!document.body) return;
         let w = document.getElementById(BALANCE_WIDGET_ID);
         if (!w) {
+            const langOptionsHtml = [
+                { v: '', label: TX.langAuto },
+                { v: 'es', label: 'Español' },
+                { v: 'en', label: 'English' },
+            ].map((o) => `<option value="${o.v}"${o.v === LANG_PREF ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('');
             w = document.createElement('div');
             w.id = BALANCE_WIDGET_ID;
             w.innerHTML = `
@@ -2111,7 +2254,12 @@
                         <input type="checkbox" id="ig-bw-remember-filters">
                         <span>${T.widgetRememberFilters}</span>
                     </label>
+                    <label class="ig-bw-toggle" title="${escapeHtml(TX.langTip)}">
+                        <span>${TX.langLabel}</span>
+                        <select id="ig-bw-lang" style="margin-left:4px;">${langOptionsHtml}</select>
+                    </label>
                     <button type="button" class="ig-bw-btn" id="ig-bw-check" title="${escapeHtml(T.widgetCheckBtnTooltip)}">${T.widgetCheckBtn}</button>
+                    <button type="button" class="ig-bw-btn ig-bw-about" id="ig-bw-about" title="${escapeHtml(TX.aboutTip)}">${TX.about}</button>
                 </div>
             `;
             document.body.appendChild(w);
@@ -2119,6 +2267,13 @@
                 e.preventDefault();
                 window.open(LIBRARY_URL + '#' + AUTOCHECK_HASH, '_blank', 'noopener');
             });
+            // Selector de idioma del script: guarda la preferencia y recarga para
+            // re-renderizar todos los textos con el nuevo idioma.
+            const langSel = w.querySelector('#ig-bw-lang');
+            if (langSel) langSel.addEventListener('change', () => { saveLangPref(langSel.value); location.reload(); });
+            // Botón "Saber más".
+            const aboutBtn = w.querySelector('#ig-bw-about');
+            if (aboutBtn) aboutBtn.addEventListener('click', (e) => { e.preventDefault(); showAboutModal(); });
             // Toggle "Ocultar ya participados": persiste y re-aplica al instante.
             const hideChk = w.querySelector('#ig-bw-hide-entered');
             hideChk.addEventListener('change', () => {

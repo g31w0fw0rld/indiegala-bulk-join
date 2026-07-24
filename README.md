@@ -1,0 +1,48 @@
+# Indiegala Giveaway Bulk Tools
+
+Userscript de Tampermonkey que añade una cola unificada de compra de boletos y utilidades a los giveaways de Indiegala. / Tampermonkey userscript that adds a unified ticket-purchase queue and utilities to Indiegala giveaways.
+
+> ⚠️ **USO BAJO TU PROPIO RIESGO / USE AT YOUR OWN RISK:** automatizar compras viola la política anti-spam de Indiegala y puede causar un baneo permanente. / Automating purchases violates Indiegala's anti-spam policy and may cause a permanent ban.
+
+## Español
+
+**Qué hace:**
+- **Cola unificada** que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo giveaway) ejecutados en secuencia.
+- Permite añadir/quitar ítems mientras la cola corre y **valida el presupuesto** restando lo ya comprometido.
+- Usa un **temporizador en Web Worker** para que las pausas no se inflen con la pestaña en segundo plano; delays humanizados y control de aborto (botón Continuar tras parar).
+- **Widget de saldo GalaSilver** con botón para abrir tu biblioteca y **revisar automáticamente** los giveaways completados (Check all) y avisarte de premios ganados hoy.
+- Opciones: ocultar los ya participados, recordar filtros de búsqueda y **selector de idioma del script** (es/en/Auto), más botón **"Saber más"**.
+
+**Idioma:** detección automática español / inglés (con override manual).
+
+**Instalación:**
+1. Instala [Tampermonkey](https://www.tampermonkey.net/).
+2. Abre el instalador: [indiegala-bulk-join.user.js](https://github.com/g31w0fw0rld/indiegala-bulk-join/raw/main/indiegala-bulk-join.user.js) (también en GreasyFork y OpenUserJS).
+
+**Sitios:** `indiegala.com/giveaways`, `indiegala.com/library`
+
+## English
+
+**What it does:**
+- **Unified queue** mixing "Single Ticket" (1 ticket) and "Extra Odds" (N tickets of the same giveaway) run in sequence.
+- Lets you add/remove items while the queue runs and **validates your budget** by subtracting what is already committed.
+- Uses a **Web Worker timer** so pauses do not inflate when the tab is backgrounded; humanized delays and abort control (Continue button after stopping).
+- **GalaSilver balance widget** with a button to open your library and **automatically check** completed giveaways (Check all) and notify you of prizes won today.
+- Options: hide already-entered giveaways, remember search filters and a **script language selector** (es/en/Auto), plus a **"Learn more"** button.
+
+**Language:** automatic Spanish / English detection (with manual override).
+
+**Install:**
+1. Install [Tampermonkey](https://www.tampermonkey.net/).
+2. Open the installer: [indiegala-bulk-join.user.js](https://github.com/g31w0fw0rld/indiegala-bulk-join/raw/main/indiegala-bulk-join.user.js) (also on GreasyFork and OpenUserJS).
+
+**Sites:** `indiegala.com/giveaways`, `indiegala.com/library`
+
+## Apoyar / Support
+
+Esto es parte de algo que estoy construyendo para crecer. Si te sirve y quieres apoyar, puedes invitarme un café en **[Ko-fi](https://ko-fi.com/g31w0fw0rld)** —solo si quieres—; y si hay una causa que lo necesite más que yo, ayúdala a ella.
+
+This is part of something I'm building to grow. If it helps you and you'd like to support it, you can tip me on **[Ko-fi](https://ko-fi.com/g31w0fw0rld)** —only if you want—; and if a cause needs it more than I do, help that one instead.
+
+---
+Autor / Author: **g31w0fw0rld** · Licencia / License: **MIT**
