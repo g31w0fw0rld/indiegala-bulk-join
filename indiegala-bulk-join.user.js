@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
 // @namespace    http://tampermonkey.net/
-// @version      1.7.3
+// @version      1.7.4
 // @description  Anade a Indiegala Giveaways una cola unificada que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo gid, con count por item) ejecutados secuencialmente. Permite añadir/quitar items mientras la cola corre, valida presupuesto restando lo ya comprometido, y usa un Web Worker timer para que las pausas no se inflen cuando la pestaña esta en background. Delays humanizados, control de aborto, boton Continuar tras stop recuperable. Incluye un widget de saldo GalaSilver con boton para abrir tu biblioteca en una pestaña nueva y revisar automaticamente los giveaways completados por ganar (Check all); si "Completed to check" esta vacio lo informa y de todas formas pasa a "Completed won" para detectar premios con fecha de hoy y avisarte (una sola vez por premio). ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -48,7 +48,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.7.3';
+    const SCRIPT_VERSION = '1.7.4';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
@@ -183,6 +183,9 @@
             libElementNotFound: 'No encontré un elemento de la biblioteca a tiempo. Revísalo manualmente.',
             libDone: 'Listo: revisión de premios disparada.',
             wheelAvailableAlert: '🎡 ¡La Wheel of Fortune cambió de estado (puede estar disponible para girar)! Atiéndela ahora para que no se te pase.',
+            wheelSpinWon: '🎡 Ruleta: ganaste {prize}',
+            wheelPrizeAfterReload: '🎡 Ruleta: ganaste {prize} · saldo actualizado',
+            wheelReloadNotice: '🎡 Ganaste {prize} · al cerrar se recarga para actualizar tu saldo',
         },
         en: {
             // Bulk join (Extra Odds)
@@ -280,6 +283,9 @@
             libElementNotFound: 'Could not find a library element in time. Please check manually.',
             libDone: 'Done: prize check triggered.',
             wheelAvailableAlert: '🎡 The Wheel of Fortune changed state (it may be available to spin)! Go attend it now so you don\'t miss it.',
+            wheelSpinWon: '🎡 Wheel: you won {prize}',
+            wheelPrizeAfterReload: '🎡 Wheel: you won {prize} · balance updated',
+            wheelReloadNotice: '🎡 You won {prize} · closing it reloads the page to refresh your balance',
         },
     };
     const T = i18n[LANG] || i18n.en;
@@ -336,6 +342,14 @@
         longPauseMaxMs: 20000,
         joinResponseTimeoutMs: 60000,
         wheelCheckIntervalMs: 15 * 60 * 1000,
+        // Cuanto se le concede a un item del listado para salir de `wait` antes
+        // de darlo por colgado. Un item que solo va lento se resuelve en ~1 s;
+        // pasado este margen, el lazy-load de Indiegala ya no va a terminar.
+        staleWaitMs: 5000,
+        // Respiro tras cerrar el popup de la ruleta antes de recargar, para que
+        // la animacion de cierre no se corte en seco. La recarga NO va por
+        // temporizador: la dispara el cierre del popup.
+        wheelReloadGraceMs: 500,
     };
 
     const STORAGE_KEY = 'ig-st-queue';
@@ -349,6 +363,14 @@
     // gids de giveaways ganados ya anunciados (premios "vistos"), para no
     // re-notificar el mismo premio cada vez que se pulsa "Revisar premios".
     const SEEN_WINS_KEY = 'ig-bulk-seen-wins';
+    // Registro { gid: timestamp } de giveaways en los que consta que ya tienes
+    // boleto. Existe para un caso concreto: cuando Indiegala deja un item
+    // colgado en `wait` (lazy-load que nunca termina), el DOM no dice nada y
+    // "ocultar ya participados" no puede decidir. Ver isAlreadyEntered().
+    const ENTERED_GIDS_KEY = 'ig-bulk-entered-gids';
+    // Los giveaways duran dias o semanas; a los 60 dias el gid ya no vuelve a
+    // aparecer en el listado y solo engordaria el storage.
+    const ENTERED_GIDS_TTL_MS = 60 * 24 * 60 * 60 * 1000;
     const BULK_BTN_CLASS = 'ig-bulk-join-btn';
     const BULK_BADGE_CLASS = 'ig-bulk-join-badge';
     const QBTN_CLASS = 'ig-q-btn';
@@ -372,6 +394,24 @@
     // cambio de estado (disponible) y avisamos con alert().
     const WHEEL_SELECTOR = '.menu-fortune-wheel';
     const WHEEL_BASELINE_HTML = '<li class="menu-fortune-wheel"><span><i aria-hidden="true" class="fa fa-gift"></i>Wheel of Fortune</span></li>';
+
+    // Popup de la ruleta y panel de resultado. El panel ya existe en el DOM
+    // antes de girar, oculto con `opacity-0 display-none`; al terminar el giro
+    // el sitio le quita ambas clases, le pone `fortune-wheel-tier-{s,a,b,c}` y
+    // rellena el <span> del premio (que hasta entonces esta vacio). Ese es el
+    // disparo que usa watchWheelSpin() — no un timeout a ojo.
+    const WHEEL_POPUP_SELECTOR = 'section.popup-time-prize';
+    const WHEEL_RESULTS_SELECTOR = '.fortune-wheel-results';
+    const WHEEL_RELOAD_NOTICE_ID = 'ig-wheel-reload-notice';
+    // Estado persistente del vigilante: { baselineSig, relearn, lastPrize }.
+    //   baselineSig -> firma aprendida del <li> del menu en estado "sin novedad"
+    //                  (la que se ve justo despues de girar). null = usar la
+    //                  firma hardcodeada WHEEL_BASELINE_SIG.
+    //   relearn     -> true entre que se detecta el giro y la recarga siguiente;
+    //                  le dice a checkWheelOnce() que aprenda en vez de avisar.
+    //   lastPrize   -> premio pendiente de reanunciar tras la recarga (el toast
+    //                  del giro muere con el reload). Se limpia al anunciarlo.
+    const WHEEL_STATE_KEY = 'ig-bulk-wheel-state';
 
     // =============================================
     // ESTADO
@@ -1397,6 +1437,23 @@
                 border-left-color: #d32f2f; background: #2a1010;
             }
 
+            /* ===== Aviso de recarga tras girar la ruleta ===== */
+            /* z-index por encima del popup de la ruleta, que es un overlay
+               propio de Indiegala y taparia el aviso. */
+            #${WHEEL_RELOAD_NOTICE_ID} {
+                position: fixed; bottom: 20px; left: 50%;
+                transform: translateX(-50%);
+                z-index: 2147483000;
+                display: flex; align-items: center; gap: 12px;
+                background: #1f1f1f; color: #fff;
+                border-left: 4px solid #f9a825;
+                border-radius: 6px;
+                padding: 12px 18px;
+                font-family: sans-serif; font-size: 13px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+                max-width: 90vw;
+            }
+
             /* ===== Widget propio de premios ganados (in-page) ===== */
             #${WIN_WIDGET_ID} {
                 position: fixed; top: 70px; left: 50%;
@@ -1922,6 +1979,10 @@
                     const st = result.status;
                     if (st === 'ok') {
                         success++;
+                        // Dejar constancia para "ocultar ya participados": si el
+                        // sitio deja luego este item colgado en `wait`, el DOM no
+                        // dira nada y este registro es lo unico que lo delata.
+                        rememberEnteredGid(it.gid);
                         // El item puede haber sido removido por el usuario
                         // mientras esperabamos la respuesta. Re-verificar.
                         const live = findQueueItem(it.gid);
@@ -1945,6 +2006,9 @@
                     else if (st === 'too_fast') { stopCode = 'too_fast'; break; }
                     else if (st === 'banned') { stopCode = 'banned'; break; }
                     else if (st === 'duplicate' || st === 'limit_reached' || st === 'not_available' || st === 'level' || st === 'owner') {
+                        // 'duplicate' = el servidor confirma que ya tienes boleto.
+                        // Es la fuente mas fiable que existe, mejor aun que el DOM.
+                        if (st === 'duplicate') rememberEnteredGid(it.gid);
                         // Item invalido para este usuario / no joinable: quitarlo
                         // entero (no tiene sentido reintentar las restantes
                         // copias del mismo gid) y seguir con el siguiente.
@@ -2652,9 +2716,45 @@
         );
     }
 
+    // -------- Estado persistente del vigilante de la ruleta --------
+    function loadWheelState() {
+        const def = { baselineSig: null, relearn: false, lastPrize: null };
+        try {
+            let raw = null;
+            if (typeof GM_getValue !== 'undefined') {
+                const v = GM_getValue(WHEEL_STATE_KEY, null);
+                if (v && typeof v === 'object' && !Array.isArray(v)) raw = v;
+                else if (typeof v === 'string') { try { raw = JSON.parse(v); } catch (_) { raw = null; } }
+            }
+            if (!raw) {
+                const s = localStorage.getItem(WHEEL_STATE_KEY);
+                raw = s ? JSON.parse(s) : null;
+            }
+            return Object.assign(def, (raw && typeof raw === 'object') ? raw : {});
+        } catch (e) {
+            console.error('[IG-BulkTools] loadWheelState error:', e);
+            return def;
+        }
+    }
+    function saveWheelState(st) {
+        try {
+            const json = JSON.stringify(st);
+            if (typeof GM_setValue !== 'undefined') GM_setValue(WHEEL_STATE_KEY, json);
+            localStorage.setItem(WHEEL_STATE_KEY, json);
+        } catch (e) {
+            console.error('[IG-BulkTools] saveWheelState error:', e);
+        }
+    }
+
     // Chequeo puntual en el load actual: espera a que el .menu-fortune-wheel
     // exista (el submenu de usuario puede renderizarse por AJAX), compara su
     // firma contra la base y, si difiere, dispara un alert() bloqueante.
+    //
+    // Si venimos de una recarga post-giro (relearn), NO avisa: el estado que
+    // muestra el menu en ese momento es por definicion "ya giraste hoy", asi
+    // que lo guarda como nueva firma base. Sin esto, cualquier <li> que no
+    // vuelva exactamente al HTML hardcodeado relanzaria la alerta en cada
+    // recarga hasta el dia siguiente.
     async function checkWheelOnce() {
         const el = await waitForElement(WHEEL_SELECTOR, 15000);
         if (!el) {
@@ -2662,12 +2762,192 @@
             return;
         }
         const sig = normalizeHtmlSig(el.outerHTML);
-        const changed = sig !== WHEEL_BASELINE_SIG;
-        console.log('[IG-BulkTools] wheel sig:', sig, '| baseline:', WHEEL_BASELINE_SIG, '| changed:', changed);
+        const st = loadWheelState();
+
+        if (st.relearn) {
+            st.relearn = false;
+            st.baselineSig = (sig === WHEEL_BASELINE_SIG) ? null : sig;
+            saveWheelState(st);
+            console.log('[IG-BulkTools] wheel: firma base aprendida tras giro:', st.baselineSig || '(hardcodeada)');
+            return;
+        }
+
+        const baseline = st.baselineSig || WHEEL_BASELINE_SIG;
+        const changed = sig !== baseline;
+        console.log('[IG-BulkTools] wheel sig:', sig, '| baseline:', baseline, '| changed:', changed);
         if (changed) {
             try { (typeof unsafeWindow !== 'undefined' && unsafeWindow.alert ? unsafeWindow.alert : window.alert)(T.wheelAvailableAlert); }
             catch (_) { try { window.alert(T.wheelAvailableAlert); } catch (__) {} }
         }
+    }
+
+    // Tras la recarga post-giro, vuelve a mostrar el premio en un toast. El
+    // aviso y el toast del giro se los llevo el reload, y esta es la pasada en
+    // la que el widget de saldo ya trae el GalaSilver/GalaCredit nuevo: se ven
+    // los dos datos juntos.
+    function announceLastWheelPrize() {
+        const st = loadWheelState();
+        if (!st.lastPrize) return;
+        const prize = st.lastPrize;
+        st.lastPrize = null;
+        saveWheelState(st);
+        try { showToast(fmt(T.wheelPrizeAfterReload, { prize }), 'success'); } catch (_) {}
+    }
+
+    // Lee el premio del panel de resultado ya revelado. El <h4> trae dos spans
+    // ("You win:" y el premio) separados por un <br>; el segundo es el bueno.
+    function readWheelPrize(results) {
+        const spans = results.querySelectorAll('h4 span');
+        const el = spans.length > 1 ? spans[spans.length - 1] : spans[0];
+        return el ? el.textContent.replace(/\s+/g, ' ').trim() : '';
+    }
+
+    // true cuando el popup esta cerrado u oculto.
+    //
+    // Indiegala NO desmonta el popup al cerrarlo, y sobre todo NO toca el panel
+    // de resultado: este se queda con su `fortune-wheel-tier-*` y su premio
+    // dentro, indistinguible del estado abierto. Lo que cambia es la <section>,
+    // que gana `display-none-important`, y el `.fortune-wheel-cont`, que gana
+    // `opacity-0`. Por eso el cierre hay que detectarlo AQUI y no mirando el
+    // panel de resultado. (Verificado con el HTML real: abierto/cerrado.)
+    function isWheelPopupHidden() {
+        const popup = document.querySelector(WHEEL_POPUP_SELECTOR);
+        if (!popup || !popup.isConnected) return true;
+        if (popup.classList.contains('display-none-important')) return true;
+        const cont = popup.querySelector('.fortune-wheel-cont');
+        return !!(cont && cont.classList.contains('opacity-0'));
+    }
+
+    // true cuando el panel de resultado esta revelado con premio dentro.
+    // Exige ambas cosas: el sitio quita `opacity-0`/`display-none` y rellena el
+    // premio, y pedir las dos evita disparar en un estado intermedio.
+    function isWheelResultReady(results) {
+        if (!results) return false;
+        const cl = results.classList;
+        if (cl.contains('display-none') || cl.contains('opacity-0')) return false;
+        return readWheelPrize(results) !== '';
+    }
+
+    // Aviso fijo que anuncia que la recarga ocurrira al cerrar el popup. Sin
+    // cuenta atras: el usuario decide cuando, leyendo el premio con calma.
+    // Devuelve una funcion que lo quita.
+    function showWheelReloadNotice(prize) {
+        const box = document.createElement('div');
+        box.id = WHEEL_RELOAD_NOTICE_ID;
+        const txt = document.createElement('span');
+        box.appendChild(txt);
+        document.body.appendChild(box);
+
+        // El premio se pinta como nodo de texto dentro de un <strong>, no via
+        // innerHTML: la cadena viene del DOM de Indiegala y no hay por que
+        // reparsearla como HTML.
+        const parts = T.wheelReloadNotice.split('{prize}');
+        txt.textContent = parts[0] || '';
+        const strong = document.createElement('strong');
+        strong.textContent = prize;
+        txt.appendChild(strong);
+        txt.appendChild(document.createTextNode(parts[1] || ''));
+
+        return () => { try { box.remove(); } catch (_) {} };
+    }
+
+    // Resuelve cuando el usuario cierra el popup de la ruleta, por la via que
+    // sea: el boton Close del panel de premio, la ✕ de la esquina, o cualquier
+    // otro camino (ESC, clic en el fondo) que desmonte u oculte el popup. Ese
+    // ultimo caso lo cubre el observer, no los listeners: sin el, un cierre por
+    // ESC dejaria el saldo desactualizado para siempre.
+    function waitForWheelPopupClose(results) {
+        return new Promise((resolve) => {
+            let done = false;
+            const finish = () => {
+                if (done) return;
+                done = true;
+                try { obs.disconnect(); } catch (_) {}
+                resolve();
+            };
+
+            [
+                document.querySelector(WHEEL_POPUP_SELECTOR + ' .fortune-wheel-dismiss'),
+                results.querySelector('button'),
+            ].forEach(b => b && b.addEventListener('click', finish, { once: true }));
+
+            const closed = () => isWheelPopupHidden() ||
+                                 !isWheelResultReady(document.querySelector(WHEEL_RESULTS_SELECTOR));
+            const obs = new MutationObserver(() => { if (closed()) finish(); });
+            obs.observe(document.documentElement, {
+                childList: true, subtree: true,
+                attributes: true, attributeFilter: ['class', 'style'],
+            });
+        });
+    }
+
+    // Vigila el popup de la ruleta en el load actual. Cuando el giro revela el
+    // premio lo anuncia y arma la recarga, que se dispara al CERRAR el popup
+    // (no por temporizador), para que el saldo y el <li> del menu queden al dia
+    // sin cortarle la lectura a nadie. Se pospone mientras haya cola corriendo
+    // o un modal propio abierto.
+    function watchWheelSpin() {
+        if (!isListingRoot()) return;
+        if (watchWheelSpin._started) return;
+        watchWheelSpin._started = true;
+
+        let fired = false;
+
+        const fire = async (results) => {
+            if (fired) return;
+            fired = true;
+            try { obs.disconnect(); } catch (_) {}
+
+            const prize = readWheelPrize(results);
+            console.log('[IG-BulkTools] wheel: giro completado, premio:', prize);
+            try { showToast(fmt(T.wheelSpinWon, { prize }), 'success'); } catch (_) {}
+
+            // Marcar ANTES de recargar. relearn -> la firma base se reaprende en
+            // el load siguiente, ya con el menu actualizado por el servidor.
+            // lastPrize -> el premio sobrevive a la recarga para reanunciarlo
+            // junto al saldo nuevo (el toast de arriba se lo lleva el reload).
+            const st = loadWheelState();
+            st.relearn = true;
+            st.lastPrize = prize;
+            saveWheelState(st);
+
+            // La recarga la dispara el usuario al cerrar, no un temporizador:
+            // asi lee el premio con el tiempo que quiera y no hay recargas
+            // sorpresa. El aviso solo anuncia que va a pasar.
+            const teardown = showWheelReloadNotice(prize);
+            await waitForWheelPopupClose(results);
+            teardown();
+            console.log('[IG-BulkTools] wheel: popup cerrado, recargando.');
+
+            // Respiro para que termine la animacion de cierre del popup.
+            await sleep(CFG.wheelReloadGraceMs);
+            // No interrumpir una cola en curso ni un modal abierto.
+            while (running || isUserBusy()) await sleep(30000);
+            try { location.reload(); } catch (_) {}
+        };
+
+        const scan = () => {
+            // El panel de resultado sobrevive al cierre con el premio dentro,
+            // asi que "hay premio" por si solo no significa "acabas de girar":
+            // hay que exigir ademas que el popup siga visible.
+            if (isWheelPopupHidden()) return;
+            const results = document.querySelector(WHEEL_RESULTS_SELECTOR);
+            if (isWheelResultReady(results)) fire(results);
+        };
+
+        // Debounce como en startObserver(): el listado genera mutaciones a
+        // destajo y no hace falta escanear en cada una. 100 ms es imperceptible
+        // frente al margen de recarga.
+        let pending = null;
+        const obs = new MutationObserver(() => {
+            if (pending) return;
+            pending = setTimeout(() => { pending = null; scan(); }, 100);
+        });
+        obs.observe(document.documentElement, {
+            childList: true, subtree: true,
+            attributes: true, attributeFilter: ['class'],
+        });
+        scan();
     }
 
     // Auto-refresca /giveaways cada CFG.wheelCheckIntervalMs (15 min) para
@@ -2747,6 +3027,103 @@
         '.items-list-item-ticket.on',
         '.items-list-item-data-cont.on',
     ];
+    // -------- Registro persistente de gids ya participados --------
+    // Se poda al cargar (TTL) para que no crezca sin limite.
+    let enteredGids = null;
+    function loadEnteredGids() {
+        if (enteredGids) return enteredGids;
+        let raw = null;
+        try {
+            if (typeof GM_getValue !== 'undefined') {
+                const v = GM_getValue(ENTERED_GIDS_KEY, null);
+                if (v && typeof v === 'object' && !Array.isArray(v)) raw = v;
+                else if (typeof v === 'string') { try { raw = JSON.parse(v); } catch (_) { raw = null; } }
+            }
+            if (!raw) {
+                const s = localStorage.getItem(ENTERED_GIDS_KEY);
+                raw = s ? JSON.parse(s) : null;
+            }
+        } catch (e) {
+            console.error('[IG-BulkTools] loadEnteredGids error:', e);
+        }
+        enteredGids = {};
+        const cutoff = Date.now() - ENTERED_GIDS_TTL_MS;
+        if (raw && typeof raw === 'object') {
+            Object.keys(raw).forEach(gid => {
+                const ts = Number(raw[gid]);
+                if (!isNaN(ts) && ts > cutoff) enteredGids[gid] = ts;
+            });
+        }
+        return enteredGids;
+    }
+    function saveEnteredGids() {
+        try {
+            const json = JSON.stringify(enteredGids || {});
+            if (typeof GM_setValue !== 'undefined') GM_setValue(ENTERED_GIDS_KEY, json);
+            localStorage.setItem(ENTERED_GIDS_KEY, json);
+        } catch (e) {
+            console.error('[IG-BulkTools] saveEnteredGids error:', e);
+        }
+    }
+    // Guarda un gid como participado. Silencioso e idempotente.
+    function rememberEnteredGid(gid) {
+        if (gid == null || gid === '') return;
+        const map = loadEnteredGids();
+        const key = String(gid);
+        if (map[key]) return;
+        map[key] = Date.now();
+        saveEnteredGids();
+    }
+    function isGidRemembered(gid) {
+        if (gid == null || gid === '') return false;
+        return !!loadEnteredGids()[String(gid)];
+    }
+    // Extrae el gid de un item del listado. Se lee del href del titulo
+    // (/giveaways/card/<slug>/<gid>) y NO del onclick de join, porque un item
+    // participado o colgado en `wait` no tiene onclick — que es justo cuando
+    // hace falta.
+    function getItemGid(item) {
+        const a = item && item.querySelector('.items-list-item-title a[href]');
+        if (!a) return null;
+        const m = (a.getAttribute('href') || '').match(/\/(\d+)\/?$/);
+        return m ? m[1] : null;
+    }
+
+    // -------- Deteccion de items colgados en `wait` --------
+    // Un item cargado trae un `.items-list-item-data-cont` (hermano del
+    // <figcaption>) con tiempo, vendidos y el control de compra.
+    //
+    // OJO con `.items-list-item-data-placeholder`: esta VACIO tanto en los
+    // cargados como en los colgados, asi que NO sirve para distinguirlos.
+    // Comprobado con el HTML real de los dos estados lado a lado.
+    function hasLoadedData(item) {
+        return !!item.querySelector('.items-list-item-data-cont');
+    }
+    function hasJoinControl(item) {
+        return !!(item.querySelector('.items-list-item-data-button a[data-price]') ||
+                  item.querySelector('a.items-list-item-ticket-click[onclick*="joinGiveaway"]'));
+    }
+
+    // Primera vez que vemos cada item en `wait`, para medir cuanto lleva sin
+    // resolverse. WeakMap: no retiene los items que el sitio reemplaza al
+    // paginar. Devuelve true solo cuando se agoto el margen.
+    const ITEM_FIRST_SEEN = new WeakMap();
+    function isWaitStalled(item) {
+        const seen = ITEM_FIRST_SEEN.get(item);
+        if (seen == null) { ITEM_FIRST_SEEN.set(item, Date.now()); return false; }
+        return (Date.now() - seen) >= CFG.staleWaitMs;
+    }
+    // true si algun item sigue en `wait` pero aun dentro del margen: hay que
+    // volver a mirar mas tarde. Un item colgado no genera mas mutaciones, asi
+    // que sin este reintento programado applyHideEntered no se ejecutaria nunca
+    // mas y el item se quedaria visible.
+    function hasPendingWaitItems() {
+        return Array.prototype.some.call(
+            document.querySelectorAll('.items-list-item.wait'),
+            it => !isWaitStalled(it)
+        );
+    }
+
     // Devuelve true si en este item ya tienes boleto (ya participaste/compraste).
     // CLAVE (visto en el sitio): la clase `wait` en .items-list-item marca que el
     // item AUN esta cargando (lazy-load de imagen + datos del ticket). Cuando
@@ -2757,8 +3134,22 @@
     //     boton porque ya no puedes volver a entrar): queda sin data-cont/boton.
     function isAlreadyEntered(item) {
         if (!item) return false;
-        // Aun cargando (lazy-load): no se puede decidir todavia -> no ocultar.
-        if (item.classList.contains('wait')) return false;
+        // Item en `wait` (lazy-load sin terminar). El DOM NO permite distinguir
+        // "cargando" de "participado": ninguno de los dos tiene control para
+        // unirse, y lo unico que los separa es la propia clase `wait`. Ademas
+        // el lazy-load de Indiegala a veces se cuelga y no la quita nunca
+        // (imagen ya cargada, .items-list-item-data-placeholder vacio para
+        // siempre), con lo que el item se quedaba visible pese a "ocultar ya
+        // participados". Se resuelve con dos fuentes, en este orden:
+        if (item.classList.contains('wait')) {
+            // (a) El registro persistente: certeza, sin esperas.
+            if (isGidRemembered(getItemGid(item))) return true;
+            // (b) Colgado: lleva mas de CFG.staleWaitMs sin resolverse y no
+            //     ofrece ninguna via de compra. El margen de tiempo es el
+            //     guardarrail: un item que solo va lento se resuelve en un
+            //     segundo, asi que sin el se ocultarian giveaways joineables.
+            return isWaitStalled(item) && !hasLoadedData(item);
+        }
         // (1) Marcador explicito: boton verde / control de ticket "on".
         for (const sel of ENTERED_SELECTORS) {
             if (item.querySelector(sel)) return true;
@@ -2769,10 +3160,7 @@
         // (3) Regla principal: ya cargo (sin `wait`) pero NO tiene control para
         //     unirse -> participado. Joineable = boton con precio O ancla de
         //     ticket con onclick de join. Si no hay ninguno, se oculta.
-        const joinBtn = item.querySelector('.items-list-item-data-button a[data-price]');
-        const joinClick = item.querySelector('a.items-list-item-ticket-click[onclick*="joinGiveaway"]');
-        if (!joinBtn && !joinClick) return true;
-        return false;
+        return !hasJoinControl(item);
     }
 
     // Aplica la preferencia "Ocultar ya participados": esconde (o restaura) la
@@ -2780,14 +3168,39 @@
     // boleto. Pasada independiente de injectListing porque los items entrados
     // pueden no exponer el trigger de join. Se reejecuta en cada injectAll
     // (disparado por el MutationObserver) para cubrir items cargados por AJAX.
+    let hideEnteredRetry = null;
     function applyHideEntered() {
         if (isLibrary()) return;
         const hide = !!settings.hideEntered;
         document.querySelectorAll('.items-list-item').forEach(item => {
+            // Aprender de los items que SI cargaron: si consta participado con
+            // el DOM completo, se apunta el gid. Asi, la proxima vez que el
+            // sitio deje ese mismo item colgado, la rama (a) lo resuelve al
+            // instante y sin depender del margen de tiempo.
+            if (!item.classList.contains('wait') && hasLoadedData(item) && !hasJoinControl(item)) {
+                rememberEnteredGid(getItemGid(item));
+            }
             const cell = item.closest('.items-list-col') || item;
-            if (hide && isAlreadyEntered(item)) cell.classList.add('ig-entered-hidden');
-            else cell.classList.remove('ig-entered-hidden');
+            if (hide && isAlreadyEntered(item)) {
+                // Si se oculto estando en `wait` fue por la regla de colgado
+                // (tardo los segundos del margen, durante los cuales el item se
+                // ve). Dejar constancia para que la proxima vez lo resuelva la
+                // rama (a) al instante y no vuelva a parpadear.
+                if (item.classList.contains('wait')) rememberEnteredGid(getItemGid(item));
+                cell.classList.add('ig-entered-hidden');
+            } else {
+                cell.classList.remove('ig-entered-hidden');
+            }
         });
+
+        // Reintento programado: un item colgado deja de generar mutaciones, asi
+        // que el MutationObserver no volveria a disparar y nadie reevaluaria.
+        if (hide && hasPendingWaitItems() && !hideEnteredRetry) {
+            hideEnteredRetry = setTimeout(() => {
+                hideEnteredRetry = null;
+                try { applyHideEntered(); } catch (e) { console.error('[IG-BulkTools] applyHideEntered retry:', e); }
+            }, CFG.staleWaitMs + 250);
+        }
     }
 
     function injectListing() {
@@ -3226,6 +3639,10 @@
         reapplyFilters();
         // Vigilante de Wheel of Fortune (se auto-limita a /giveaways listado raiz).
         startWheelWatcher();
+        // Detector de giro: recarga tras revelarse el premio (idem, listado raiz).
+        watchWheelSpin();
+        // Si venimos de esa recarga, reanunciar el premio junto al saldo nuevo.
+        announceLastWheelPrize();
     }
 
     if (document.readyState === 'loading') {
