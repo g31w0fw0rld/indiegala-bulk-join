@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
 // @namespace    http://tampermonkey.net/
-// @version      1.7.6
+// @version      1.7.7
 // @description  Anade a Indiegala Giveaways una cola unificada que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo gid, con count por item) ejecutados secuencialmente. Permite añadir/quitar/reordenar items mientras la cola corre y encolar aunque no alcance el saldo (los boletos sin GalaSilver se saltan y esperan en la cola, no rompen la corrida), y usa un Web Worker timer para que las pausas no se inflen cuando la pestaña esta en background. Delays humanizados, control de aborto, boton Continuar tras stop recuperable. Incluye un widget de saldo GalaSilver con boton para abrir tu biblioteca en una pestaña nueva y revisar automaticamente los giveaways completados por ganar (Check all); si "Completed to check" esta vacio lo informa y de todas formas pasa a "Completed won" para detectar premios con fecha de hoy y avisarte (una sola vez por premio). ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -48,7 +48,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.7.6';
+    const SCRIPT_VERSION = '1.7.7';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
@@ -93,7 +93,6 @@
             bulkLabelTooltip: '⚠ Riesgo de ban — la política de Indiegala prohíbe la automatización. Uso bajo tu propio riesgo.',
             bulkBadge: '⚠×{n}',
             bulkBadgeTooltip: '⚠ Riesgo de ban — comprar varios boletos (Extra Odds) automáticamente VIOLA la política de Indiegala y puede banear tu cuenta. Máx {n} con tu saldo.',
-            modalTitle: 'Compra masiva de boletos',
             modalEnqueueTitle: 'Encolar boletos (Extra Odds)',
             modalGiveaway: 'Giveaway',
             modalPrice: 'Precio por boleto',
@@ -111,7 +110,6 @@
             modalEnqueueAndRunConfirm: 'Encolar y ejecutar',
             modalCancel: 'Cancelar',
             invalidCount: 'Cantidad inválida (1 a {max}).',
-            notEnough: 'No tienes GalaSilver suficiente para comprar al menos 1 boleto.',
             enqueueCapped: 'Cantidad recortada a {n} (máximo por giveaway).',
             enqueuedAddedRunning: '{n} boletos añadidos a la cola en curso.',
             // Cola (Single Ticket)
@@ -190,7 +188,6 @@
             libWonStatus: '🎉 ¡Ganaste {n} premio(s) hoy!',
             winWidgetTitle: '🎉 ¡Premios ganados hoy! ({n})',
             libElementNotFound: 'No encontré un elemento de la biblioteca a tiempo. Revísalo manualmente.',
-            libDone: 'Listo: revisión de premios disparada.',
             wheelAvailableAlert: '🎡 ¡La Wheel of Fortune cambió de estado (puede estar disponible para girar)! Atiéndela ahora para que no se te pase.',
             wheelSpinWon: '🎡 Ruleta: ganaste {prize}',
             wheelPrizeAfterReload: '🎡 Ruleta: ganaste {prize} · saldo actualizado',
@@ -202,7 +199,6 @@
             bulkLabelTooltip: '⚠ Ban risk — Indiegala policy forbids automation. Use at your own risk.',
             bulkBadge: '⚠×{n}',
             bulkBadgeTooltip: '⚠ Ban risk — buying multiple tickets (Extra Odds) automatically VIOLATES Indiegala policy and may ban your account. Max {n} with your balance.',
-            modalTitle: 'Bulk ticket purchase',
             modalEnqueueTitle: 'Queue tickets (Extra Odds)',
             modalGiveaway: 'Giveaway',
             modalPrice: 'Price per ticket',
@@ -220,7 +216,6 @@
             modalEnqueueAndRunConfirm: 'Queue & run',
             modalCancel: 'Cancel',
             invalidCount: 'Invalid amount (1 to {max}).',
-            notEnough: 'Not enough GalaSilver to buy at least 1 ticket.',
             enqueueCapped: 'Capped to {n} (max per giveaway).',
             enqueuedAddedRunning: '{n} tickets added to the running queue.',
             // Queue (Single Ticket)
@@ -295,7 +290,6 @@
             libWonStatus: '🎉 You won {n} prize(s) today!',
             winWidgetTitle: '🎉 Prizes won today! ({n})',
             libElementNotFound: 'Could not find a library element in time. Please check manually.',
-            libDone: 'Done: prize check triggered.',
             wheelAvailableAlert: '🎡 The Wheel of Fortune changed state (it may be available to spin)! Go attend it now so you don\'t miss it.',
             wheelSpinWon: '🎡 Wheel: you won {prize}',
             wheelPrizeAfterReload: '🎡 Wheel: you won {prize} · balance updated',
@@ -739,31 +733,11 @@
         return currentBalance;
     }
 
-    // Decrementa el saldo cacheado tras un join exitoso, sincroniza con el DOM
-    // (toma el menor) y refresca badges + estado de los botones de cola.
-    function consumeBalance(amount) {
-        if (currentBalance == null) {
-            currentBalance = getGalaSilver();
-        }
-        if (currentBalance != null) {
-            currentBalance = Math.max(0, currentBalance - (amount || 0));
-        }
-        // Re-verificar contra el div de info del usuario por si Indiegala ya
-        // actualizo el saldo (caso comun: respuesta del servidor llegada antes
-        // del siguiente tick) y para protegernos de quedar por encima del real.
-        const dom = getGalaSilver();
-        if (dom != null) {
-            currentBalance = (currentBalance == null) ? dom : Math.min(currentBalance, dom);
-        }
-        refreshBulkBadges();
-        refreshQueueButtonsState();
-    }
-
     // Lee el saldo del DOM y SOBREESCRIBE el cache (puede subir o bajar). A
-    // diferencia de getCurrentBalance/consumeBalance, no usa Math.min: aqui se
-    // confia en el div del usuario como verdad. Pensado para puntos donde el
-    // usuario hace una accion explicita y queremos darle la cifra mas reciente
-    // (p.ej. cuando intenta encolar y el cache dice 0).
+    // diferencia de getCurrentBalance, no usa Math.min: aqui se confia en el
+    // div del usuario como verdad. Pensado para puntos donde el usuario hace
+    // una accion explicita y queremos darle la cifra mas reciente (p.ej.
+    // cuando intenta encolar y el cache dice 0).
     function forceReadBalance() {
         const dom = getGalaSilver();
         if (dom != null) {
