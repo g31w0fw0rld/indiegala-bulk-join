@@ -1,34 +1,50 @@
 # Indiegala Giveaway Bulk Tools
 
-Userscript de Tampermonkey que añade una cola unificada de compra de boletos y utilidades a los giveaways de Indiegala. / Tampermonkey userscript that adds a unified ticket-purchase queue and utilities to Indiegala giveaways.
+Tampermonkey userscript that adds a unified ticket-purchase queue and utilities to Indiegala giveaways. / Userscript de Tampermonkey que añade una cola unificada de compra de boletos y utilidades a los giveaways de Indiegala.
 
-> ⚠️ **USO BAJO TU PROPIO RIESGO / USE AT YOUR OWN RISK:** automatizar compras viola la política anti-spam de Indiegala y puede causar un baneo permanente. / Automating purchases violates Indiegala's anti-spam policy and may cause a permanent ban.
+> [!WARNING]
+> **USE AT YOUR OWN RISK / USO BAJO TU PROPIO RIESGO:** automating purchases violates Indiegala's anti-spam policy and may cause a permanent ban. / Automatizar compras viola la política anti-spam de Indiegala y puede causar un baneo permanente.
 
-## Español
+![The queue panel, the GalaSilver widget and the buttons the script injects on indiegala.com/giveaways](docs/screenshot-giveaways.png)
 
-**Qué hace:**
-- **Cola unificada** que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo giveaway) ejecutados en secuencia.
-- Permite añadir/quitar/reordenar ítems mientras la cola corre (▲▼ por fila, el orden es el de ejecución) y **encolar aunque no te alcance el saldo**: los boletos sin GalaSilver se marcan con ⏳, se saltan durante la corrida y se compran cuando tengas saldo.
-- Usa un **temporizador en Web Worker** para que las pausas no se inflen con la pestaña en segundo plano; delays humanizados y control de aborto (botón Continuar tras parar).
-- **Widget de saldo GalaSilver** con botón para abrir tu biblioteca y **revisar automáticamente** los giveaways completados (Check all) y avisarte de premios ganados hoy.
-- Opciones: ocultar los ya participados, recordar filtros de búsqueda y **selector de idioma del script** (es/en/Auto), más botón **"Saber más"**.
+*Queue panel (bottom left), GalaSilver widget (top right) and the buttons injected on each card: ＋ to queue a Single Ticket, ✓ when already queued, ⚠×N for Extra Odds. Queued tickets you cannot afford yet are flagged with ⏳. / Panel de la cola (abajo a la izquierda), widget de GalaSilver (arriba a la derecha) y los botones que se inyectan en cada card: ＋ para encolar un Single Ticket, ✓ si ya está en cola, ⚠×N para Extra Odds. Los boletos encolados que aún no te alcanzan se marcan con ⏳.*
 
-**Idioma:** detección automática español / inglés (con override manual).
+<img src="docs/screenshot-giveaways-mobile.png" width="375" alt="The same queue and balance widget on a phone-sized viewport">
 
-**Instalación:**
-1. Instala [Tampermonkey](https://www.tampermonkey.net/).
-2. Abre el instalador: [indiegala-bulk-join.user.js](https://github.com/g31w0fw0rld/indiegala-bulk-join/raw/main/indiegala-bulk-join.user.js) (también en [GreasyFork](https://greasyfork.org/es-419/users/1590477-g31w) y [OpenUserJS](https://openuserjs.org/users/g31w0fw0rldgmail.com/scripts)).
-
-**Sitios:** `indiegala.com/giveaways`, `indiegala.com/library`
+*Same queue on a phone: the panel goes full width along the bottom, the widget clears the site header, and every row keeps its ▲▼ reorder controls. / La misma cola en un móvil: el panel pasa a ancho completo abajo, el widget se aparta del header del sitio y cada fila conserva sus controles ▲▼ para reordenar.*
 
 ## English
 
-**What it does:**
-- **Unified queue** mixing "Single Ticket" (1 ticket) and "Extra Odds" (N tickets of the same giveaway) run in sequence.
-- Lets you add/remove/reorder items while the queue runs (▲▼ per row; order is execution order) and **queue beyond your balance**: tickets you cannot afford are flagged with ⏳, skipped during the run and bought once you have GalaSilver.
-- Uses a **Web Worker timer** so pauses do not inflate when the tab is backgrounded; humanized delays and abort control (Continue button after stopping).
-- **GalaSilver balance widget** with a button to open your library and **automatically check** completed giveaways (Check all) and notify you of prizes won today.
-- Options: hide already-entered giveaways, remember search filters and a **script language selector** (es/en/Auto), plus a **"Learn more"** button.
+### What it does
+
+**Ticket queue**
+- **Unified queue** mixing "Single Ticket" (1 ticket) and "Extra Odds" (N tickets of the same giveaway), bought one after another.
+- **Add, remove and reorder** while the queue runs. The order of the list *is* the execution order, so ▲▼ change what gets bought next even mid-run.
+- **Queue beyond your balance.** Tickets you cannot afford are flagged with ⏳, skipped during the run and bought once you have GalaSilver — a run no longer dies on the first item you cannot pay for.
+- **Two ways in for Extra Odds:** the ⚠×N badge on the listing card — where N is how many tickets your balance covers — and a **Bulk JOIN** button on the giveaway's own page. Either one asks how many tickets and gives you two exits: **Queue** (park them) or **Queue & run**. Capped at 50 tickets per giveaway.
+- **Humanized pacing:** 2.5–5 s between tickets and a 10–20 s pause every 10, on a **Web Worker timer** so those pauses are not stretched when the tab sits in the background.
+- Stops on its own when the server pushes back (rate limit, ban, no answer) and offers **Continue** when the cause is recoverable. The queue survives reloads.
+- Clicking a card **title** queues it instead of opening the giveaway, so a stray click does not navigate away.
+- The panel lives on the `/giveaways` listing: it hides on other pages but the queue is kept. Panel and widget can both be minimized, and they remember.
+
+**GalaSilver widget**
+- Live balance, read from Indiegala's own responses, plus what is left after the queue — or how much you are **missing** for all of it.
+- Shows your GalaCredit as well. Minimizable, and it remembers.
+
+**Prizes (your library)**
+- **Check prizes** opens your library in a new tab and walks it for you: Giveaways → Completed to check → Check all → Completed won. If there is nothing to check it says so and goes on to the won list anyway.
+- Announces prizes that ended **today** in its own in-page widget with links, plus a beep and a tab-title badge — once per prize, remembered so it never nags twice.
+
+**Wheel of Fortune**
+- Watches the wheel entry in the user menu and **reloads `/giveaways` every 15 minutes** while the queue is idle, so a change of state does not slip by; when it changes, it alerts you.
+- After a spin it reads the prize, tells you which one, and reloads **when you close the popup** — not on a timer — so your balance and the menu are up to date without cutting your reading short. It never reloads while the queue is running or a dialog is open.
+
+**Listing options**
+- **Hide giveaways you already entered** (remembered across reloads).
+- **Remember search filters:** sort, level filter, search text and page, re-applied on load.
+- **Script language:** Spanish, English or Auto.
+- **"Learn more"** button with a summary inside the page.
+- Layout adapted to phones.
 
 **Language:** automatic Spanish / English detection (with manual override).
 
@@ -38,17 +54,58 @@ Userscript de Tampermonkey que añade una cola unificada de compra de boletos y 
 
 **Sites:** `indiegala.com/giveaways`, `indiegala.com/library`
 
-## Privacidad / Privacy
+## Español
 
-**ES:** el script no hace ninguna petición propia ni a Indiegala ni a terceros: automatiza clics sobre los botones del propio sitio, así que las peticiones que salen son las de Indiegala con tu sesión de siempre, y el botón de biblioteca solo abre `indiegala.com/library` en otra pestaña. El saldo GalaSilver y el estado de los giveaways se leen de la página. Guarda en tu navegador (`localStorage` de `indiegala.com` y el almacenamiento del gestor de userscripts) solo la cola pendiente, tus ajustes y presupuesto, los premios de los que ya te avisó y tu preferencia de idioma. No se envía nada a terceros ni al autor. Aparte de la privacidad, recuerda el aviso de arriba: automatizar viola la política anti-spam de Indiegala y los clics sintéticos son detectables por el sitio.
+### Qué hace
+
+**Cola de boletos**
+- **Cola unificada** que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo giveaway), comprados uno tras otro.
+- **Añadir, quitar y reordenar** mientras la cola corre. El orden de la lista *es* el orden de ejecución, así que los ▲▼ cambian qué se compra a continuación incluso a mitad de corrida.
+- **Encolar aunque no te alcance el saldo.** Los boletos que no puedes pagar se marcan con ⏳, se saltan durante la corrida y se compran cuando tengas GalaSilver — una corrida ya no muere en el primer ítem que no alcanza.
+- **Dos vías de entrada para Extra Odds:** el badge ⚠×N en la tarjeta del listado —donde N es cuántos boletos cubre tu saldo— y un botón **Bulk JOIN** en la página propia del giveaway. Cualquiera de los dos pregunta cuántos boletos y da dos salidas: **Encolar** (dejarlos esperando) o **Encolar y ejecutar**. Topado a 50 boletos por giveaway.
+- **Ritmo humanizado:** 2.5–5 s entre boletos y una pausa de 10–20 s cada 10, sobre un **temporizador en Web Worker** para que esas pausas no se estiren con la pestaña en segundo plano.
+- Se detiene solo cuando el servidor protesta (límite de ritmo, baneo, sin respuesta) y ofrece **Continuar** si la causa es recuperable. La cola sobrevive a las recargas.
+- Al hacer clic en el **título** de una tarjeta se encola en vez de abrir el giveaway, para que un clic despistado no te saque de la página.
+- El panel vive en el listado de `/giveaways`: se oculta en otras páginas pero la cola se conserva. Panel y widget se pueden minimizar, y lo recuerdan.
+
+**Widget de GalaSilver**
+- Saldo en vivo, leído de las propias respuestas de Indiegala, más lo que queda descontando la cola — o cuánto te **falta** para toda ella.
+- Muestra también tu GalaCredit. Minimizable, y lo recuerda.
+
+**Premios (tu biblioteca)**
+- **Revisar premios** abre tu biblioteca en otra pestaña y la recorre por ti: Giveaways → Completed to check → Check all → Completed won. Si no hay nada por revisar lo dice y pasa igualmente a la lista de ganados.
+- Anuncia los premios terminados **hoy** en su propio widget dentro de la página, con enlaces, un beep y un contador en el título de la pestaña — una sola vez por premio, recordado para no repetirse.
+
+**Wheel of Fortune**
+- Vigila la entrada de la ruleta en el menú de usuario y **recarga `/giveaways` cada 15 minutos** mientras la cola está parada, para que un cambio de estado no se te pase; cuando cambia, te avisa.
+- Tras un giro lee el premio, te dice cuál es, y recarga **al cerrar tú el popup** —no por temporizador— para que el saldo y el menú queden al día sin cortarte la lectura. Nunca recarga con la cola corriendo ni con un diálogo abierto.
+
+**Opciones del listado**
+- **Ocultar los giveaways en los que ya tienes boleto** (se recuerda al recargar).
+- **Recordar filtros de búsqueda:** orden, filtro de nivel, texto y página, reaplicados al cargar.
+- **Idioma del script:** español, inglés o Auto.
+- Botón **"Saber más"** con un resumen dentro de la página.
+- Layout adaptado a móviles.
+
+**Idioma:** detección automática español / inglés (con override manual).
+
+**Instalación:**
+1. Instala [Tampermonkey](https://www.tampermonkey.net/).
+2. Abre el instalador: [indiegala-bulk-join.user.js](https://github.com/g31w0fw0rld/indiegala-bulk-join/raw/main/indiegala-bulk-join.user.js) (también en [GreasyFork](https://greasyfork.org/es-419/users/1590477-g31w) y [OpenUserJS](https://openuserjs.org/users/g31w0fw0rldgmail.com/scripts)).
+
+**Sitios:** `indiegala.com/giveaways`, `indiegala.com/library`
+
+## Privacy / Privacidad
 
 **EN:** the script makes no requests of its own, neither to Indiegala nor to third parties: it automates clicks on the site's own buttons, so the requests that go out are Indiegala's with your existing session, and the library button just opens `indiegala.com/library` in a new tab. The GalaSilver balance and giveaway states are read from the page. It stores in your browser (`localStorage` on `indiegala.com` and the userscript manager's storage) only the pending queue, your settings and budget, the prizes it has already notified you about, and your language preference. Nothing is sent to third parties or to the author. Beyond privacy, keep the warning above in mind: automating violates Indiegala's anti-spam policy and synthetic clicks are detectable by the site.
 
-## Apoyar / Support
+**ES:** el script no hace ninguna petición propia ni a Indiegala ni a terceros: automatiza clics sobre los botones del propio sitio, así que las peticiones que salen son las de Indiegala con tu sesión de siempre, y el botón de biblioteca solo abre `indiegala.com/library` en otra pestaña. El saldo GalaSilver y el estado de los giveaways se leen de la página. Guarda en tu navegador (`localStorage` de `indiegala.com` y el almacenamiento del gestor de userscripts) solo la cola pendiente, tus ajustes y presupuesto, los premios de los que ya te avisó y tu preferencia de idioma. No se envía nada a terceros ni al autor. Aparte de la privacidad, recuerda el aviso de arriba: automatizar viola la política anti-spam de Indiegala y los clics sintéticos son detectables por el sitio.
 
-Esto es parte de algo que estoy construyendo para crecer. Si te sirve y quieres apoyar, puedes invitarme un café en **[Ko-fi](https://ko-fi.com/g31w0fw0rld)** —solo si quieres—; y si hay una causa que lo necesite más que yo, ayúdala a ella.
+## Support / Apoyar
 
 This is part of something I'm building to grow. If it helps you and you'd like to support it, you can tip me on **[Ko-fi](https://ko-fi.com/g31w0fw0rld)** —only if you want—; and if a cause needs it more than I do, help that one instead.
 
+Esto es parte de algo que estoy construyendo para crecer. Si te sirve y quieres apoyar, puedes invitarme un café en **[Ko-fi](https://ko-fi.com/g31w0fw0rld)** —solo si quieres—; y si hay una causa que lo necesite más que yo, ayúdala a ella.
+
 ---
-Autor / Author: **g31w0fw0rld** · Licencia / License: **MIT**
+Author / Autor: **g31w0fw0rld** · License / Licencia: **MIT**

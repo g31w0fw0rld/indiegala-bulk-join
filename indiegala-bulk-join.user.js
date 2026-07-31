@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
 // @namespace    http://tampermonkey.net/
-// @version      1.7.5
+// @version      1.7.6
 // @description  Anade a Indiegala Giveaways una cola unificada que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo gid, con count por item) ejecutados secuencialmente. Permite añadir/quitar/reordenar items mientras la cola corre y encolar aunque no alcance el saldo (los boletos sin GalaSilver se saltan y esperan en la cola, no rompen la corrida), y usa un Web Worker timer para que las pausas no se inflen cuando la pestaña esta en background. Delays humanizados, control de aborto, boton Continuar tras stop recuperable. Incluye un widget de saldo GalaSilver con boton para abrir tu biblioteca en una pestaña nueva y revisar automaticamente los giveaways completados por ganar (Check all); si "Completed to check" esta vacio lo informa y de todas formas pasa a "Completed won" para detectar premios con fecha de hoy y avisarte (una sola vez por premio). ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -48,7 +48,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.7.5';
+    const SCRIPT_VERSION = '1.7.6';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
@@ -139,7 +139,12 @@
             warningBody: 'La política de Indiegala prohíbe explícitamente cualquier forma de automatización para participar en giveaways, incluso desde la misma cuenta. Indiegala se reserva el derecho de banear permanentemente las cuentas que la violen. Usar este script bajo tu propio riesgo.',
             warningPolicyLink: 'Ver política oficial →',
             warningProgress: '⚠ Automatización en curso — riesgo de ban',
-            warningProgressQueue: '⚠ Cola con automatización — riesgo de ban',
+            // Dos contextos con verdades distintas: la cabecera del panel se ve
+            // siempre (aunque no haya nada corriendo) y el overlay solo durante
+            // una corrida. Compartir una cadena obligaba a que una de las dos
+            // mintiera.
+            warningQueuePanel: '⚠ Cola con automatización — riesgo de ban',
+            warningProgressQueue: '⚠ Cola con automatización en curso — riesgo de ban',
             balanceUnknown: 'No pude leer tu saldo de GalaSilver. Abre el menú de usuario una vez (clic en tu avatar) y vuelve a intentarlo.',
             alreadyRunning: 'Ya hay una operación masiva en curso.',
             progressTitle: 'Compra masiva en curso',
@@ -243,6 +248,7 @@
             warningBody: 'Indiegala policy explicitly forbids any form of automation to enter giveaways, even from the same account. Indiegala reserves the right to permanently ban accounts that violate it. Use this script at your own risk.',
             warningPolicyLink: 'See official policy →',
             warningProgress: '⚠ Automation running — ban risk',
+            warningQueuePanel: '⚠ Automated queue — ban risk',
             warningProgressQueue: '⚠ Automated queue running — ban risk',
             balanceUnknown: 'Could not read your GalaSilver balance. Open the user menu once (click your avatar) and try again.',
             alreadyRunning: 'A bulk operation is already running.',
@@ -310,12 +316,25 @@
             aboutTitle: '¿Qué hace este script?',
             aboutBody: [
                 '⚠️ USO BAJO TU PROPIO RIESGO: automatizar compras viola la política anti-spam de Indiegala y puede causar ban permanente.',
-                'Este script añade a Indiegala Giveaways una cola unificada de compra de boletos:',
-                '• Mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo giveaway) y los ejecuta en secuencia.',
-                '• Permite añadir/quitar/reordenar items mientras la cola corre, y encolar aunque no te alcance: los boletos sin saldo esperan en la cola y se compran cuando tengas GalaSilver.',
-                '• Usa un temporizador en Web Worker para que las pausas no se inflen con la pestaña en segundo plano; delays humanizados y control de aborto (con botón Continuar tras parar).',
-                '• Widget de saldo GalaSilver con botón para abrir tu biblioteca y revisar automáticamente los giveaways completados (Check all) y avisarte de premios ganados hoy.',
-                '• Opciones: ocultar los ya participados, recordar filtros de búsqueda y elegir el idioma del script.',
+                'Este script añade a Indiegala Giveaways una cola unificada de compra de boletos y varias utilidades alrededor.',
+                '▸ Cola de boletos',
+                '• Mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo giveaway) y los compra uno tras otro.',
+                '• Añadir, quitar y reordenar mientras corre: el orden de la lista es el orden de ejecución, y los ▲▼ surten efecto a mitad de corrida.',
+                '• Puedes encolar aunque no te alcance el saldo: esos boletos se marcan con ⏳, se saltan durante la corrida y se compran cuando tengas GalaSilver.',
+                '• Extra Odds se encola desde dos sitios: el badge ⚠×N de la tarjeta (N = cuántos cubre tu saldo) y el botón Bulk JOIN en la página propia del giveaway. Ambos preguntan cuántos boletos y dan dos salidas: Encolar, o Encolar y ejecutar. Tope de 50 por giveaway.',
+                '• Ritmo humanizado: 2.5–5 s entre boletos y pausa de 10–20 s cada 10, con temporizador en Web Worker para que no se estiren con la pestaña en segundo plano.',
+                '• Se detiene solo si el servidor protesta (ritmo, baneo, sin respuesta) y ofrece Continuar cuando la causa es recuperable. La cola sobrevive a las recargas.',
+                '• Al hacer clic en el título de una tarjeta se encola, en vez de abrir el giveaway.',
+                '▸ Widget de GalaSilver',
+                '• Saldo en vivo leído de las respuestas del sitio, lo que queda descontando la cola, o cuánto falta para toda ella. También muestra tu GalaCredit.',
+                '▸ Premios (tu biblioteca)',
+                '• "Revisar premios" abre tu biblioteca en otra pestaña y la recorre: Giveaways → Completed to check → Check all → Completed won.',
+                '• Anuncia los premios terminados hoy en un widget dentro de la página, con enlaces, beep y contador en el título de la pestaña. Una sola vez por premio.',
+                '▸ Wheel of Fortune',
+                '• Recarga /giveaways cada 15 min mientras la cola está parada, para avisarte si la ruleta cambia de estado.',
+                '• Tras girar te dice el premio y recarga al cerrar tú el popup, para que el saldo quede al día. Nunca recarga con la cola corriendo ni con un diálogo abierto.',
+                '▸ Opciones del listado',
+                '• Ocultar los giveaways en los que ya tienes boleto, recordar filtros de búsqueda (orden, nivel, texto y página) y elegir el idioma del script (es/en/Auto).',
                 'Todo se procesa en tu navegador; no se envían datos a terceros.',
             ],
         },
@@ -327,12 +346,25 @@
             aboutTitle: 'What does this script do?',
             aboutBody: [
                 '⚠️ USE AT YOUR OWN RISK: automating purchases violates Indiegala\'s anti-spam policy and may cause a permanent ban.',
-                'This script adds a unified ticket-purchase queue to Indiegala Giveaways:',
-                '• Mixes "Single Ticket" (1 ticket) and "Extra Odds" (N tickets of the same giveaway) and runs them in sequence.',
-                '• Lets you add/remove/reorder items while the queue runs, and queue beyond your balance: tickets you cannot afford wait in the queue and are bought once you have GalaSilver.',
-                '• Uses a Web Worker timer so pauses do not inflate when the tab is in the background; humanized delays and abort control (with a Continue button after stopping).',
-                '• GalaSilver balance widget with a button to open your library and automatically check completed giveaways (Check all) and notify you of prizes won today.',
-                '• Options: hide already-entered giveaways, remember search filters, and choose the script language.',
+                'This script adds a unified ticket-purchase queue to Indiegala Giveaways, plus a few utilities around it.',
+                '▸ Ticket queue',
+                '• Mixes "Single Ticket" (1 ticket) and "Extra Odds" (N tickets of the same giveaway) and buys them one after another.',
+                '• Add, remove and reorder while it runs: the order of the list is the execution order, and ▲▼ take effect mid-run.',
+                '• You can queue beyond your balance: those tickets are flagged with ⏳, skipped during the run and bought once you have GalaSilver.',
+                '• Extra Odds can be queued from two places: the ⚠×N badge on the card (N = how many your balance covers) and the Bulk JOIN button on the giveaway\'s own page. Both ask how many tickets and give two exits: Queue, or Queue & run. Capped at 50 per giveaway.',
+                '• Humanized pacing: 2.5–5 s between tickets and a 10–20 s pause every 10, on a Web Worker timer so they are not stretched when the tab is in the background.',
+                '• Stops on its own if the server pushes back (rate limit, ban, no answer) and offers Continue when the cause is recoverable. The queue survives reloads.',
+                '• Clicking a card title queues it instead of opening the giveaway.',
+                '▸ GalaSilver widget',
+                '• Live balance read from the site\'s own responses, what is left after the queue, or how much you are missing for all of it. It shows your GalaCredit too.',
+                '▸ Prizes (your library)',
+                '• "Check prizes" opens your library in a new tab and walks it: Giveaways → Completed to check → Check all → Completed won.',
+                '• Announces prizes that ended today in a widget inside the page, with links, a beep and a tab-title badge. Once per prize.',
+                '▸ Wheel of Fortune',
+                '• Reloads /giveaways every 15 min while the queue is idle, to alert you if the wheel changes state.',
+                '• After a spin it tells you the prize and reloads when you close the popup, so the balance is up to date. It never reloads while the queue runs or a dialog is open.',
+                '▸ Listing options',
+                '• Hide giveaways you already entered, remember search filters (sort, level, text and page) and choose the script language (es/en/Auto).',
                 'Everything runs in your browser; no data is sent to third parties.',
             ],
         },
@@ -1612,8 +1644,10 @@
                     max-height: 55vh;
                 }
                 #${PANEL_ID} .ig-q-list { max-height: 35vh; }
-                /* Si el overlay de progreso ya muestra el warning, ocultamos
-                   la copia del header de la cola para no duplicarlo. */
+                /* Si el overlay de progreso ya muestra su aviso, ocultamos el
+                   del header de la cola: dicen lo mismo con otras palabras y en
+                   movil el alto es lo que escasea. El del overlay es el que
+                   manda, porque ahi si hay una corrida en marcha. */
                 body:has(#${PROGRESS_OVERLAY_ID}) #${PANEL_ID} .ig-q-warning-bar {
                     display: none;
                 }
@@ -2297,7 +2331,7 @@
         const prevList = panel.querySelector('.ig-q-list');
         const prevScroll = prevList ? prevList.scrollTop : 0;
         panel.innerHTML = `
-            <div class="ig-q-warning-bar">${T.warningProgressQueue}</div>
+            <div class="ig-q-warning-bar">${T.warningQueuePanel}</div>
             <div class="ig-q-head">
                 <h4>${T.queuePanelTitle}</h4>
                 <button type="button" id="ig-q-min" class="ig-q-min"></button>
@@ -2425,6 +2459,15 @@
             row.style.marginBottom = '8px';
             if (trimmed.startsWith('•')) row.style.paddingLeft = '10px';
             if (trimmed.startsWith('⚠')) { row.style.color = '#ffcf66'; row.style.fontWeight = '600'; }
+            // '▸' marca encabezado de grupo. Son ~19 puntos y sin jerarquia no
+            // se leen; aqui no hay markdown (esto va por textContent), asi que
+            // el marcador es la unica via. Se consume: es estructura, no texto.
+            if (trimmed.startsWith('▸')) {
+                row.textContent = trimmed.slice(1).trim();
+                row.style.color = '#c88bff';
+                row.style.fontWeight = '700';
+                row.style.marginTop = '14px';
+            }
             box.appendChild(row);
         });
         const gh = document.createElement('a');
