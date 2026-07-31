@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
 // @namespace    http://tampermonkey.net/
-// @version      1.7.4
-// @description  Anade a Indiegala Giveaways una cola unificada que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo gid, con count por item) ejecutados secuencialmente. Permite añadir/quitar items mientras la cola corre, valida presupuesto restando lo ya comprometido, y usa un Web Worker timer para que las pausas no se inflen cuando la pestaña esta en background. Delays humanizados, control de aborto, boton Continuar tras stop recuperable. Incluye un widget de saldo GalaSilver con boton para abrir tu biblioteca en una pestaña nueva y revisar automaticamente los giveaways completados por ganar (Check all); si "Completed to check" esta vacio lo informa y de todas formas pasa a "Completed won" para detectar premios con fecha de hoy y avisarte (una sola vez por premio). ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
+// @version      1.7.5
+// @description  Anade a Indiegala Giveaways una cola unificada que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo gid, con count por item) ejecutados secuencialmente. Permite añadir/quitar/reordenar items mientras la cola corre y encolar aunque no alcance el saldo (los boletos sin GalaSilver se saltan y esperan en la cola, no rompen la corrida), y usa un Web Worker timer para que las pausas no se inflen cuando la pestaña esta en background. Delays humanizados, control de aborto, boton Continuar tras stop recuperable. Incluye un widget de saldo GalaSilver con boton para abrir tu biblioteca en una pestaña nueva y revisar automaticamente los giveaways completados por ganar (Check all); si "Completed to check" esta vacio lo informa y de todas formas pasa a "Completed won" para detectar premios con fecha de hoy y avisarte (una sola vez por premio). ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
 // @match        https://www.indiegala.com/library
@@ -48,7 +48,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.7.4';
+    const SCRIPT_VERSION = '1.7.5';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
@@ -100,7 +100,8 @@
             modalBalance: 'Saldo GalaSilver',
             modalAvailable: 'Disponible (saldo − cola)',
             modalAlreadyQueued: 'Ya en cola',
-            modalMax: 'Máximo posible',
+            modalAffordableNow: 'Alcanzan con tu saldo',
+            modalMax: 'Máximo por giveaway',
             modalCount: 'Cantidad a comprar',
             modalCountAdd: 'Cantidad a añadir',
             modalTotalCost: 'Costo total',
@@ -111,25 +112,27 @@
             modalCancel: 'Cancelar',
             invalidCount: 'Cantidad inválida (1 a {max}).',
             notEnough: 'No tienes GalaSilver suficiente para comprar al menos 1 boleto.',
-            enqueueCapped: 'Cantidad recortada a {n} (saldo disponible).',
-            enqueueNoBudget: 'Sin saldo disponible (descontando lo ya en cola) para encolar este item.',
+            enqueueCapped: 'Cantidad recortada a {n} (máximo por giveaway).',
             enqueuedAddedRunning: '{n} boletos añadidos a la cola en curso.',
             // Cola (Single Ticket)
             queueAddBtn: '＋',
             queueAddBtnTooltip: '⚠ Riesgo de ban — añadir este giveaway a la cola para entrar automáticamente. Uso bajo tu propio riesgo.',
             queueRemoveBtn: '✓',
             queueRemoveBtnTooltip: 'En cola — clic para quitar',
-            queueNoBalance: 'Sin GalaSilver disponible. Recarga para encolar más giveaways.',
-            queueNoBalanceTooltip: 'Sin GalaSilver — no puedes encolar este giveaway',
+            queueMoveUp: 'Subir — se intentará antes',
+            queueMoveDown: 'Bajar — se intentará después',
+            queueWaitsForBalance: 'Sin saldo ahora — queda en cola y se compra cuando tengas GalaSilver',
             queuePanelTitle: '⚠ Cola Single Ticket',
             queueTotalCost: '{n} boletos · {cost} iS',
             queueExecuteBtn: '▶ Ejecutar',
             queueClearBtn: '🗑 Vaciar',
             queueClearConfirm: '¿Vaciar toda la cola?',
             queueExecuteConfirmTitle: '⚠️ Confirmar ejecución de cola',
-            queueLowBalance: 'Tu saldo ({balance} iS) es menor al costo total ({cost} iS). Algunos joins fallarán. ¿Continuar de todas formas?',
+            queueLowBalance: 'Tu saldo ({balance} iS) es menor al costo total ({cost} iS). Los boletos que no alcancen se saltarán y quedarán en cola. ¿Continuar de todas formas?',
             queueProgressItem: '{title} ({i}/{n})',
             queueDone: 'Listo. {ok} de {n} entradas exitosas.',
+            queueDoneSkipped: 'Listo. {ok} de {n} exitosas · {w} sin saldo suficiente.',
+            queueItemNoFunds: 'Sin saldo para este boleto — se salta hasta que tengas GalaSilver',
             queueModalCount: 'Boletos en cola',
             // Compartido
             warningTitle: '⚠️ RIESGO DE BAN PERMANENTE',
@@ -159,6 +162,7 @@
             widgetTitle: 'GalaSilver',
             widgetGalaCredit: 'GalaCredit: {v}',
             widgetAvailable: 'Disponible (− cola): {n} iS',
+            widgetShortfall: 'Faltan {n} iS para toda la cola',
             widgetCheckBtn: '🎁 Revisar premios',
             widgetCheckBtnTooltip: 'Abre tu biblioteca en una pestaña nueva y revisa automáticamente los giveaways completados por ganar (Check all).',
             widgetBalanceUnknown: '— iS',
@@ -200,7 +204,8 @@
             modalBalance: 'GalaSilver balance',
             modalAvailable: 'Available (balance − queue)',
             modalAlreadyQueued: 'Already queued',
-            modalMax: 'Max possible',
+            modalAffordableNow: 'Affordable with your balance',
+            modalMax: 'Max per giveaway',
             modalCount: 'Tickets to buy',
             modalCountAdd: 'Tickets to add',
             modalTotalCost: 'Total cost',
@@ -211,25 +216,27 @@
             modalCancel: 'Cancel',
             invalidCount: 'Invalid amount (1 to {max}).',
             notEnough: 'Not enough GalaSilver to buy at least 1 ticket.',
-            enqueueCapped: 'Capped to {n} (available budget).',
-            enqueueNoBudget: 'No available budget (after subtracting queue) to enqueue this item.',
+            enqueueCapped: 'Capped to {n} (max per giveaway).',
             enqueuedAddedRunning: '{n} tickets added to the running queue.',
             // Queue (Single Ticket)
             queueAddBtn: '＋',
             queueAddBtnTooltip: '⚠ Ban risk — add this giveaway to the queue for automatic entry. Use at your own risk.',
             queueRemoveBtn: '✓',
             queueRemoveBtnTooltip: 'In queue — click to remove',
-            queueNoBalance: 'No GalaSilver available. Top up to queue more giveaways.',
-            queueNoBalanceTooltip: 'No GalaSilver — cannot queue this giveaway',
+            queueMoveUp: 'Move up — tried sooner',
+            queueMoveDown: 'Move down — tried later',
+            queueWaitsForBalance: 'No balance right now — it stays queued and is bought once you have GalaSilver',
             queuePanelTitle: '⚠ Single Ticket Queue',
             queueTotalCost: '{n} tickets · {cost} iS',
             queueExecuteBtn: '▶ Execute',
             queueClearBtn: '🗑 Clear',
             queueClearConfirm: 'Clear the entire queue?',
             queueExecuteConfirmTitle: '⚠️ Confirm queue execution',
-            queueLowBalance: 'Your balance ({balance} iS) is lower than total cost ({cost} iS). Some joins will fail. Continue anyway?',
+            queueLowBalance: 'Your balance ({balance} iS) is lower than total cost ({cost} iS). Tickets you cannot afford are skipped and stay queued. Continue anyway?',
             queueProgressItem: '{title} ({i}/{n})',
             queueDone: 'Done. {ok} of {n} entries successful.',
+            queueDoneSkipped: 'Done. {ok} of {n} successful · {w} lack balance.',
+            queueItemNoFunds: 'Not enough balance for this ticket — skipped until you have GalaSilver',
             queueModalCount: 'Tickets queued',
             // Shared
             warningTitle: '⚠️ PERMANENT BAN RISK',
@@ -259,6 +266,7 @@
             widgetTitle: 'GalaSilver',
             widgetGalaCredit: 'GalaCredit: {v}',
             widgetAvailable: 'Available (− queue): {n} iS',
+            widgetShortfall: 'Missing {n} iS for the whole queue',
             widgetCheckBtn: '🎁 Check prizes',
             widgetCheckBtnTooltip: 'Opens your library in a new tab and automatically checks completed giveaways to see if you won (Check all).',
             widgetBalanceUnknown: '— iS',
@@ -304,7 +312,7 @@
                 '⚠️ USO BAJO TU PROPIO RIESGO: automatizar compras viola la política anti-spam de Indiegala y puede causar ban permanente.',
                 'Este script añade a Indiegala Giveaways una cola unificada de compra de boletos:',
                 '• Mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo giveaway) y los ejecuta en secuencia.',
-                '• Permite añadir/quitar items mientras la cola corre y valida el presupuesto restando lo ya comprometido.',
+                '• Permite añadir/quitar/reordenar items mientras la cola corre, y encolar aunque no te alcance: los boletos sin saldo esperan en la cola y se compran cuando tengas GalaSilver.',
                 '• Usa un temporizador en Web Worker para que las pausas no se inflen con la pestaña en segundo plano; delays humanizados y control de aborto (con botón Continuar tras parar).',
                 '• Widget de saldo GalaSilver con botón para abrir tu biblioteca y revisar automáticamente los giveaways completados (Check all) y avisarte de premios ganados hoy.',
                 '• Opciones: ocultar los ya participados, recordar filtros de búsqueda y elegir el idioma del script.',
@@ -321,7 +329,7 @@
                 '⚠️ USE AT YOUR OWN RISK: automating purchases violates Indiegala\'s anti-spam policy and may cause a permanent ban.',
                 'This script adds a unified ticket-purchase queue to Indiegala Giveaways:',
                 '• Mixes "Single Ticket" (1 ticket) and "Extra Odds" (N tickets of the same giveaway) and runs them in sequence.',
-                '• Lets you add/remove items while the queue runs and validates your budget by subtracting what is already committed.',
+                '• Lets you add/remove/reorder items while the queue runs, and queue beyond your balance: tickets you cannot afford wait in the queue and are bought once you have GalaSilver.',
                 '• Uses a Web Worker timer so pauses do not inflate when the tab is in the background; humanized delays and abort control (with a Continue button after stopping).',
                 '• GalaSilver balance widget with a button to open your library and automatically check completed giveaways (Check all) and notify you of prizes won today.',
                 '• Options: hide already-entered giveaways, remember search filters, and choose the script language.',
@@ -341,6 +349,13 @@
         longPauseMinMs: 10000,
         longPauseMaxMs: 20000,
         joinResponseTimeoutMs: 60000,
+        // Techo de boletos por giveaway al encolar Extra Odds. Antes el limite
+        // lo ponia el saldo; ahora que se puede encolar sin saldo hace falta
+        // un tope explicito, o un dedo torpe encola cientos de boletos que
+        // luego se compran solos en cuanto entre GalaSilver. Numero elegido a
+        // mano: Extra Odds es lo mas arriesgado del script (comprar N boletos
+        // seguidos del mismo giveaway es el patron que Indiegala persigue).
+        maxEnqueuePerItem: 50,
         wheelCheckIntervalMs: 15 * 60 * 1000,
         // Cuanto se le concede a un item del listado para salir de `wait` antes
         // de darlo por colgado. Un item que solo va lento se resuelve en ~1 s;
@@ -727,6 +742,21 @@
         return currentBalance;
     }
 
+    // El server respondio "sin saldo" (status 'silver') a un join de precio
+    // `price`: eso PRUEBA que el saldo real es menor que ese precio, aunque el
+    // DOM siga mostrando una cifra vieja mas alta. Bajamos el cache a esa cota
+    // para que la cola salte ese item (y los mas caros) sin gastar otra
+    // peticion en redescubrirlo. Solo baja, nunca sube: el proximo join exitoso
+    // trae el silver_tot autoritativo por el hook de ajax y corrige la cifra.
+    function clampBalanceBelow(price) {
+        const cap = Math.max(0, (price || 0) - 1);
+        currentBalance = (currentBalance == null) ? cap : Math.min(currentBalance, cap);
+        refreshBulkBadges();
+        refreshQueueButtonsState();
+        try { renderBalanceWidget(); } catch (e) {}
+        return currentBalance;
+    }
+
     // Re-sincroniza el saldo cacheado con el DOM tras finalizar una ejecucion
     // (cola o bulk). Inmediato + diferido a 3s para captar la respuesta del
     // servidor que pudo actualizar el div del usuario despues del loop.
@@ -936,6 +966,15 @@
         if (!price || price <= 0) return 0;
         return Math.max(0, Math.floor(avail / price));
     }
+    // Un item es ejecutable si su precio cabe en el saldo actual. Saldo
+    // desconocido (null) cuenta como ejecutable: quien decide entonces es el
+    // server, que responde status 'silver' y ahi releemos el saldo de verdad.
+    // Pasar `bal` explicito para no releer el DOM por cada fila del panel.
+    function itemAffordable(it, bal) {
+        const b = (bal === undefined) ? getCurrentBalance() : bal;
+        if (b == null) return true;
+        return (it.price || 0) <= b;
+    }
 
     // Agrega o suma a un item existente. Devuelve el item resultante en la cola.
     // Si el gid ya existia, se suma `count` al pendiente respetando type/fnName del nuevo
@@ -963,6 +1002,21 @@
         refreshQueueButtonsState();
         refreshBulkBadges();
         return norm;
+    }
+    // Mueve un item una posicion arriba (delta -1) o abajo (+1). El orden de
+    // `queue` ES el orden de ejecucion: el loop toma en cada tick el primer
+    // item pendiente y ejecutable, asi que reordenar surte efecto incluso a
+    // mitad de corrida (el join en vuelo ya viajo y termina igual).
+    function moveInQueue(gid, delta) {
+        const i = queue.findIndex(q => q.gid === gid);
+        if (i < 0) return;
+        const j = i + delta;
+        if (j < 0 || j >= queue.length) return;
+        const tmp = queue[i];
+        queue[i] = queue[j];
+        queue[j] = tmp;
+        saveQueue();
+        renderQueuePanel();
     }
     function removeFromQueue(gid) {
         queue = queue.filter(q => q.gid !== gid);
@@ -1048,12 +1102,13 @@
                 background: linear-gradient(135deg, #2e7d32 0%, #66bb6a 100%);
                 border-color: #fff;
             }
-            .${QBTN_CLASS}.ig-q-btn-disabled {
-                opacity: 0.4;
-                cursor: not-allowed;
+            /* "Se encolara pero esperara saldo": sigue siendo clicable (de ahi
+               que conserve el hover), solo apagado y con borde ambar. */
+            .${QBTN_CLASS}.ig-q-btn-wait {
+                opacity: 0.65;
                 background: rgba(40, 40, 40, 0.85);
+                border-color: rgba(255, 207, 102, 0.7);
             }
-            .${QBTN_CLASS}.ig-q-btn-disabled:hover { transform: none; }
 
             #${PANEL_ID} {
                 position: fixed;
@@ -1116,6 +1171,11 @@
                 background: rgba(106, 27, 154, 0.18);
                 border-left: 3px solid #ff7da6;
             }
+            /* Item que la corrida salta por falta de saldo. Atenuado + reloj,
+               para que se lea en movil sin depender del tooltip (no hay hover). */
+            #${PANEL_ID} .ig-q-li-nofunds .ig-q-it-title { opacity: 0.55; }
+            #${PANEL_ID} .ig-q-li-nofunds .ig-q-it-price { color: #9e9e9e; }
+            #${PANEL_ID} .ig-q-it-wait { font-size: 11px; opacity: 0.85; cursor: help; }
             #${PANEL_ID} .ig-q-it-rem {
                 width: 22px; height: 22px;
                 border: none; border-radius: 50%;
@@ -1123,6 +1183,19 @@
                 cursor: pointer; font-weight: bold;
                 font-size: 12px; line-height: 1;
             }
+            /* Reordenar: ▲▼ lado a lado (no apilados) para que el area de toque
+               no baje de ~20px, que en movil ya es el minimo practicable. Se
+               come ancho al titulo, que de todas formas va con ellipsis. */
+            #${PANEL_ID} .ig-q-it-mv {
+                flex: 0 0 auto;
+                width: 20px; height: 22px;
+                border: 1px solid #555; border-radius: 4px;
+                background: #333; color: #ddd;
+                cursor: pointer; font-size: 9px; line-height: 1;
+                padding: 0;
+            }
+            #${PANEL_ID} .ig-q-it-mv:hover:not(:disabled) { background: #444; color: #fff; }
+            #${PANEL_ID} .ig-q-it-mv:disabled { opacity: 0.25; cursor: default; }
             #${PANEL_ID} .ig-q-actions {
                 display: flex; gap: 6px;
                 padding: 10px 12px;
@@ -1179,7 +1252,7 @@
                 font-size: 16px; text-align: center;
             }
             #${MODAL_ID} .ig-note { font-size: 11px; color: #777; margin: 6px 0 12px; }
-            #${MODAL_ID} .ig-actions { display: flex; gap: 8px; margin-top: 12px; }
+            #${MODAL_ID} .ig-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
             #${MODAL_ID} button {
                 flex: 1;
                 padding: 10px;
@@ -1192,6 +1265,17 @@
                 background: linear-gradient(90deg, #6a1b9a 0%, #ad1457 100%);
             }
             #${MODAL_ID} .ig-cancel { background: #eee; color: #333; }
+            /* "Encolar y ejecutar" en su propia fila y con estilo outline, no
+               con el gradiente: el gradiente se lo queda "Encolar", que es la
+               salida segura. Disparar compras es la accion arriesgada del modal
+               y no debe ser la que la vista empuja a pulsar. */
+            #${MODAL_ID} .ig-confirm-run {
+                flex-basis: 100%;
+                background: transparent;
+                color: #b71c1c;
+                border: 2px solid #d32f2f;
+            }
+            #${MODAL_ID} .ig-confirm-run:hover { background: #ffebee; }
 
             #${PROGRESS_OVERLAY_ID} {
                 position: fixed; bottom: 20px; right: 20px;
@@ -1348,6 +1432,8 @@
             #${BALANCE_WIDGET_ID} .ig-bw-avail {
                 font-size: 11px; color: #9ccc65; margin-bottom: 8px;
             }
+            /* Misma linea, pero cuando informa un faltante: verde mentiria. */
+            #${BALANCE_WIDGET_ID} .ig-bw-avail.ig-bw-short { color: #ffcf66; }
             #${BALANCE_WIDGET_ID} .ig-bw-credit {
                 font-size: 12px; color: #80d8ff;
                 font-weight: bold; margin-bottom: 8px;
@@ -1659,8 +1745,11 @@
     // MODAL: ENCOLAR BOLETOS (Extra Odds → cola unificada)
     // =============================================
     // Devuelve la cantidad solicitada (>=1) o null si se canceló.
-    // Auto-cap: si el usuario tipea > max, al confirmar se recorta silencioso a
-    // max y se muestra un toast. Si max=0 (sin presupuesto), devuelve null.
+    // El tope ya NO es el saldo: se puede encolar de mas y los boletos que no
+    // alcancen esperan en la cola (el loop los salta). El tope es
+    // CFG.maxEnqueuePerItem, y el saldo se muestra como dato ("alcanzan con tu
+    // saldo: N"). Auto-cap: si el usuario tipea > tope, al confirmar se recorta
+    // y se avisa con un toast.
     function openEnqueueCountModal(params, contextLabel, opts) {
         opts = opts || {};
         const isRunning = !!opts.isRunning;
@@ -1668,13 +1757,14 @@
             const balance = getCurrentBalance();
             const existing = findQueueItem(params.gid);
             const alreadyPending = existing ? itemPending(existing) : 0;
-            const maxAdd = maxEnqueueCount(params.price);
+            const affordableNow = maxEnqueueCount(params.price) || 0;
+            const maxAdd = CFG.maxEnqueuePerItem;
             if (balance == null) { showToast(T.balanceUnknown, 'error'); resolve(null); return; }
-            if (maxAdd == null || maxAdd < 1) { showToast(T.enqueueNoBudget, 'warn'); resolve(null); return; }
 
-            const confirmLabel = isRunning ? T.modalEnqueueConfirm : T.modalEnqueueAndRunConfirm;
             const available = availableForEnqueue();
-            const defaultVal = Math.min(maxAdd, Math.max(1, opts.suggested || maxAdd));
+            // Por defecto, lo que se puede pagar ya (comportamiento de siempre);
+            // si no alcanza para ninguno, 1 — encolar uno y que espere.
+            const defaultVal = Math.min(maxAdd, Math.max(1, opts.suggested || affordableNow || 1));
 
             const backdrop = document.createElement('div');
             backdrop.id = MODAL_ID + '-backdrop';
@@ -1691,6 +1781,7 @@
                     <div class="ig-row"><b>${T.modalBalance}</b><span>${balance} iS</span></div>
                     <div class="ig-row"><b>${T.modalAvailable}</b><span>${available} iS</span></div>
                     ${alreadyPending > 0 ? `<div class="ig-row"><b>${T.modalAlreadyQueued}</b><span>${alreadyPending}</span></div>` : ''}
+                    <div class="ig-row"><b>${T.modalAffordableNow}</b><span>${affordableNow}</span></div>
                     <div class="ig-row"><b>${T.modalMax}</b><span>${maxAdd}</span></div>
                     <label style="display:block;margin-top:10px;font-size:12px;color:#555">${T.modalCountAdd}:</label>
                     <input type="number" id="ig-bulk-count" min="1" max="${maxAdd}" value="${defaultVal}">
@@ -1699,7 +1790,8 @@
                     <div class="ig-note">${T.modalDelays}</div>
                     <div class="ig-actions">
                         <button class="ig-cancel">${T.modalCancel}</button>
-                        <button class="ig-confirm">${confirmLabel}</button>
+                        <button class="ig-confirm">${T.modalEnqueueConfirm}</button>
+                        ${isRunning ? '' : `<button class="ig-confirm-run">${T.modalEnqueueAndRunConfirm}</button>`}
                     </div>
                 </div>
             `;
@@ -1719,21 +1811,37 @@
 
             const close = (val) => { backdrop.remove(); resolve(val); };
             backdrop.querySelector('.ig-cancel').addEventListener('click', () => close(null));
-            backdrop.querySelector('.ig-confirm').addEventListener('click', () => {
+
+            // Cantidad validada, o null dejando el error a la vista.
+            const readCount = () => {
                 let v = parseInt(input.value, 10);
                 if (isNaN(v) || v < 1) {
                     errorEl.textContent = fmt(T.invalidCount, { max: maxAdd });
                     errorEl.classList.add('ig-visible');
                     input.focus();
                     input.select();
-                    return;
+                    return null;
                 }
                 if (v > maxAdd) {
                     showToast(fmt(T.enqueueCapped, { n: maxAdd }), 'warn');
                     v = maxAdd;
                 }
-                close(v);
-            });
+                return v;
+            };
+            // Dos salidas distintas: encolar y dejarlo ahi, o encolar y arrancar
+            // la cola. Antes eran el mismo boton (la etiqueta cambiaba segun si
+            // la cola ya corria), asi que con la cola parada no habia forma de
+            // encolar SIN ejecutar — justo lo que hace falta para dejar boletos
+            // esperando saldo. Si la cola ya corre, el boton de ejecutar no se
+            // pinta: la corrida en curso lo recoge sola.
+            const submit = (run) => {
+                const v = readCount();
+                if (v == null) return;
+                close({ count: v, run: !!run });
+            };
+            backdrop.querySelector('.ig-confirm').addEventListener('click', () => submit(false));
+            const runBtn = backdrop.querySelector('.ig-confirm-run');
+            if (runBtn) runBtn.addEventListener('click', () => submit(true));
             backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(null); });
             document.addEventListener('keydown', function escHandler(e) {
                 if (e.key === 'Escape') {
@@ -1909,12 +2017,19 @@
         let success = 0;        // joins ok totales en esta corrida
         let iteration = 0;       // tick global (para longPause cada N)
         let stopCode = null;
+        let silverHits = 0;      // 'silver' del server consecutivos (ver abajo)
 
         try {
             while (true) {
                 if (abortFlag) { stopCode = 'aborted'; break; }
-                // Toma el primer item con count>done. queue es la fuente viva.
-                const it = queue.find(q => itemPending(q) > 0);
+                // Primer item con count>done QUE ADEMAS quepa en el saldo.
+                // Un item que no alcanza NO detiene la corrida: se salta y se
+                // siguen intentando los demas, asi una cola mixta ya no muere
+                // en el primer item caro. Si no queda ninguno ejecutable, el
+                // loop termina limpio y el resumen dice cuantos esperan saldo.
+                // queue es la fuente viva.
+                const balNow = getCurrentBalance();
+                const it = queue.find(q => itemPending(q) > 0 && itemAffordable(q, balNow));
                 if (!it) break;
 
                 const remainingNow = queue.reduce((s, q) => s + itemPending(q), 0);
@@ -1948,12 +2063,23 @@
                     if (live) { gid = live.gid; token = live.token; fnArg2 = live.fnArg2; }
                     const liveItem = triggerEl.closest('.items-list-item');
                     const dp = findDataPrice(liveItem || document);
-                    if (dp != null) price = dp;
+                    // El precio del DOM manda, y lo persistimos en el item: si
+                    // subio por encima del saldo hay que dejar constancia, o el
+                    // `find` del siguiente tick lo re-elegiria con el precio
+                    // viejo y el loop no avanzaria nunca.
+                    if (dp != null) {
+                        price = dp;
+                        if (dp !== it.price) { it.price = dp; saveQueue(); }
+                    }
                     if (isErrorVisible(triggerEl)) { stopCode = 'error'; break; }
                 }
 
-                const balNow = getCurrentBalance();
-                if (balNow != null && balNow < price) { stopCode = 'balance_low'; break; }
+                // El precio fresco ya no cabe en el saldo: saltar este item sin
+                // gastar una peticion. No hubo join, asi que tampoco pausa.
+                if (balNow != null && price > balNow) {
+                    renderQueuePanel();
+                    continue;
+                }
 
                 try {
                     // Resolver dinamicamente la fn segun el item. Para extra odds
@@ -1979,6 +2105,7 @@
                     const st = result.status;
                     if (st === 'ok') {
                         success++;
+                        silverHits = 0;
                         // Dejar constancia para "ocultar ya participados": si el
                         // sitio deja luego este item colgado en `wait`, el DOM no
                         // dira nada y este registro es lo unico que lo delata.
@@ -2002,7 +2129,23 @@
                             i: success,
                             n: success + newRem,
                         }));
-                    } else if (st === 'silver') { stopCode = 'balance_low'; break; }
+                    } else if (st === 'silver') {
+                        // El server es la autoridad: nuestro saldo cacheado iba
+                        // alto (DOM rancio). Bajamos la cota con lo que acaba de
+                        // probar y seguimos: el filtro de la cola saltara este
+                        // item y los mas caros, en vez de matar la corrida.
+                        // Aun asi cortamos al segundo 'silver' consecutivo —
+                        // cada uno es un join fallido, y encadenarlos es justo
+                        // lo que dispara el too_fast del sitio. La cota deja el
+                        // boton Continuar util: al reintentar ya no repite los
+                        // items que no alcanzan.
+                        // No hay `continue`: cae al sleep del final del tick,
+                        // porque la peticion SI salio y el ritmo importa.
+                        silverHits++;
+                        clampBalanceBelow(price);
+                        if (silverHits >= 2) { stopCode = 'balance_low'; break; }
+                        renderQueuePanel();
+                    }
                     else if (st === 'too_fast') { stopCode = 'too_fast'; break; }
                     else if (st === 'banned') { stopCode = 'banned'; break; }
                     else if (st === 'duplicate' || st === 'limit_reached' || st === 'not_available' || st === 'level' || st === 'owner') {
@@ -2039,10 +2182,18 @@
             running = false;
             const finalRem = queue.reduce((s, q) => s + itemPending(q), 0);
             const finalTotal = success + finalRem;
+            // Boletos que quedaron pendientes solo por saldo: el loop los salto
+            // en vez de parar, asi que hay que decirlo o el usuario ve la cola
+            // con restos y ningun motivo a la vista.
+            const balEnd = getCurrentBalance();
+            const waiting = queue.reduce(
+                (s, q) => s + (itemAffordable(q, balEnd) ? 0 : itemPending(q)), 0);
             const stopReason = stopReasonFromCode(stopCode);
             const finalMsg = stopReason
                 ? `${stopReason} (${success}/${finalTotal})`
-                : fmt(T.queueDone, { ok: success, n: finalTotal });
+                : (waiting > 0
+                    ? fmt(T.queueDoneSkipped, { ok: success, n: finalTotal, w: waiting })
+                    : fmt(T.queueDone, { ok: success, n: finalTotal }));
 
             // Boton "Continuar": permitido si la causa es recuperable y aun
             // queda algun pendiente en la cola viva.
@@ -2090,7 +2241,12 @@
         const totalTickets = queue.reduce((s, q) => s + itemPending(q), 0);
         const totalCost = pendingQueueCost();
         // El primer item con pendientes es el "en curso" si running=true.
-        const activeGid = running ? (queue.find(q => itemPending(q) > 0) || {}).gid : null;
+        const balForRows = getCurrentBalance();
+        // El "en curso" es el primer item ejecutable, no el primer pendiente:
+        // los que no alcanzan se saltan, asi que resaltar uno de esos mentiria.
+        const activeGid = running
+            ? (queue.find(q => itemPending(q) > 0 && itemAffordable(q, balForRows)) || {}).gid
+            : null;
 
         // El MutationObserver re-dispara injectAll() (y por ende este render)
         // cada vez que el sitio toca el DOM por AJAX/carrusel. Reescribir
@@ -2099,31 +2255,47 @@
         // el contenido visible cambio de verdad: firma = items pendientes +
         // totales + item activo + estado running. Si la firma no cambio,
         // salimos sin tocar el DOM y el scroll se preserva.
+        // `b` (saldo) entra en la firma porque de el depende que filas salgan
+        // atenuadas: sin el, subir de saldo no repintaria el panel.
         const sig = JSON.stringify({
             r: running,
             a: activeGid,
             t: totalTickets,
             c: totalCost,
+            b: balForRows,
             items: queue.map(q => [q.gid, q.title, itemPending(q), q.price || 0, q.count || 1, q.done || 0]),
         });
         if (panel.dataset.sig === sig && panel.querySelector('.ig-q-list')) return;
         panel.dataset.sig = sig;
 
-        const items = queue.map(q => {
+        const lastIdx = queue.length - 1;
+        const items = queue.map((q, idx) => {
             const pending = itemPending(q);
             const totalForRow = pending * (q.price || 0);
             const multi = (q.count || 1) > 1;
             const countLabel = multi ? `<span class="ig-q-it-count" title="${q.done || 0}/${q.count}">×${pending}</span>` : '';
             const isActive = q.gid === activeGid;
+            const noFunds = !itemAffordable(q, balForRows);
+            const waitLabel = noFunds
+                ? `<span class="ig-q-it-wait" title="${escapeHtml(T.queueItemNoFunds)}">⏳</span>`
+                : '';
             return `
-                <li class="${isActive ? 'ig-q-li-active' : ''}">
-                    <span class="ig-q-it-title" title="${escapeHtml(q.title)} — ${escapeHtml(q.timeLeft || '')}">${escapeHtml(q.title)}</span>
+                <li class="${isActive ? 'ig-q-li-active' : ''}${noFunds ? ' ig-q-li-nofunds' : ''}">
+                    <span class="ig-q-it-title" title="${escapeHtml(q.title)} — ${escapeHtml(q.timeLeft || '')}${noFunds ? ' · ' + escapeHtml(T.queueItemNoFunds) : ''}">${escapeHtml(q.title)}</span>
                     ${countLabel}
+                    ${waitLabel}
                     <span class="ig-q-it-price">${totalForRow} iS</span>
+                    <button class="ig-q-it-mv" data-gid="${escapeHtml(q.gid)}" data-dir="-1" title="${T.queueMoveUp}"${idx === 0 ? ' disabled' : ''}>▲</button>
+                    <button class="ig-q-it-mv" data-gid="${escapeHtml(q.gid)}" data-dir="1" title="${T.queueMoveDown}"${idx === lastIdx ? ' disabled' : ''}>▼</button>
                     <button class="ig-q-it-rem" data-gid="${escapeHtml(q.gid)}" title="${T.queueRemoveBtnTooltip}">×</button>
                 </li>
             `;
         }).join('');
+        // Reordenar SI cambia la firma, asi que aqui se reescribe el innerHTML y
+        // el scroll de la lista se iria al inicio en cada ▲▼ — insufrible al
+        // mover un item varias posiciones en una cola larga. Se guarda y repone.
+        const prevList = panel.querySelector('.ig-q-list');
+        const prevScroll = prevList ? prevList.scrollTop : 0;
         panel.innerHTML = `
             <div class="ig-q-warning-bar">${T.warningProgressQueue}</div>
             <div class="ig-q-head">
@@ -2137,11 +2309,20 @@
                 <button id="ig-q-exec"${running ? ' disabled' : ''}>${T.queueExecuteBtn}</button>
             </div>
         `;
+        const newList = panel.querySelector('.ig-q-list');
+        if (newList && prevScroll) newList.scrollTop = prevScroll;
+
         panel.querySelector('#ig-q-min').addEventListener('click', (e) => {
             e.preventDefault();
             settings.queueMin = !settings.queueMin;
             saveSettings();
             applyQueueMinState(panel);
+        });
+        panel.querySelectorAll('.ig-q-it-mv').forEach(b => {
+            b.addEventListener('click', (e) => {
+                e.stopPropagation();
+                moveInQueue(b.dataset.gid, parseInt(b.dataset.dir, 10));
+            });
         });
         panel.querySelectorAll('.ig-q-it-rem').forEach(b => {
             b.addEventListener('click', (e) => {
@@ -2171,21 +2352,22 @@
     }
 
     function refreshQueueButtonsState() {
-        // "Disponible" para singles = saldo - cola pendiente. Si <=0 marcamos
-        // el ＋ como deshabilitado (no se puede agregar otro single sin
-        // exceder el presupuesto comprometido).
+        // "Disponible" para singles = saldo - cola pendiente. Si no alcanza, el
+        // ＋ NO se deshabilita: encolar sin saldo esta permitido y el boleto
+        // espera en la cola. Solo se marca como "en espera" (atenuado + tooltip)
+        // para que quede claro que no se comprara todavia.
         const avail = availableForEnqueue();
         document.querySelectorAll('.' + QBTN_CLASS).forEach(btn => {
             const gid = btn.dataset.gid;
             const price = parseInt(btn.dataset.price, 10);
             const inQ = isInQueue(gid);
-            const noBalance = !inQ && avail != null && (!isNaN(price) ? avail < price : avail <= 0);
+            const willWait = !inQ && avail != null && (!isNaN(price) ? avail < price : avail <= 0);
             btn.classList.toggle('ig-q-btn-active', inQ);
-            btn.classList.toggle('ig-q-btn-disabled', noBalance);
+            btn.classList.toggle('ig-q-btn-wait', willWait);
             btn.textContent = inQ ? T.queueRemoveBtn : T.queueAddBtn;
             btn.title = inQ
                 ? T.queueRemoveBtnTooltip
-                : (noBalance ? T.queueNoBalanceTooltip : T.queueAddBtnTooltip);
+                : (willWait ? T.queueWaitsForBalance : T.queueAddBtnTooltip);
         });
     }
 
@@ -2373,9 +2555,16 @@
         const availEl = w.querySelector('#ig-bw-avail');
         if (availEl) {
             const pendingCost = pendingQueueCost();
-            if (bal != null && pendingCost > 0) {
+            // Con la cola por encima del saldo, "Disponible: 0" esconde el dato
+            // que importa (cuanto falta), asi que ahi se informa el faltante.
+            if (bal != null && pendingCost > bal) {
                 availEl.style.display = '';
-                availEl.textContent = fmt(T.widgetAvailable, { n: Math.max(0, bal - pendingCost) });
+                availEl.classList.add('ig-bw-short');
+                availEl.textContent = fmt(T.widgetShortfall, { n: pendingCost - bal });
+            } else if (bal != null && pendingCost > 0) {
+                availEl.style.display = '';
+                availEl.classList.remove('ig-bw-short');
+                availEl.textContent = fmt(T.widgetAvailable, { n: bal - pendingCost });
             } else {
                 availEl.style.display = 'none';
             }
@@ -2400,8 +2589,13 @@
     // encola y la corrida en curso lo recogera en la siguiente iteracion.
     async function enqueueExtraOddsFlow(params, contextLabel) {
         const wasRunning = running;
-        const n = await openEnqueueCountModal(params, contextLabel, { isRunning: wasRunning });
-        if (!n || n < 1) return;
+        const res = await openEnqueueCountModal(params, contextLabel, { isRunning: wasRunning });
+        if (!res || !res.count) return;
+        const n = res.count;
+        // Comprobar el presupuesto ANTES de encolar: despues, lo que acabamos de
+        // añadir ya cuenta como comprometido y el numero saldria en negativo
+        // aunque hubiera saldo de sobra.
+        const availBefore = availableForEnqueue();
         addToQueue({
             gid: params.gid,
             title: contextLabel,
@@ -2415,12 +2609,17 @@
             type: 'bulk',
             addedAt: Date.now(),
         });
+        const shortOnBudget = availBefore != null && availBefore < n * params.price;
         if (wasRunning) {
             showToast(fmt(T.enqueuedAddedRunning, { n }), 'info');
-        } else {
+        } else if (res.run) {
             // Atajo "encolar y ejecutar": el usuario ya confirmo la cantidad
             // en el modal, no hace falta el modal de cola otra vez.
             executeQueue({ skipConfirm: true });
+        } else if (shortOnBudget) {
+            // Encolado a proposito por encima del saldo: decirlo, o el panel
+            // aparece con boletos en ⏳ sin explicacion.
+            showToast(T.queueWaitsForBalance, 'warn');
         }
     }
 
@@ -3277,14 +3476,18 @@
                     }
                     // El presupuesto disponible ya descuenta lo comprometido en
                     // la cola. Si el cache esta stale (0 o null) forzamos lectura
-                    // fresca del DOM antes de validar contra el precio.
+                    // fresca del DOM: puede haber entrado saldo (ruleta, compra)
+                    // y no queremos avisar de espera si ya alcanza.
                     let avail = availableForEnqueue();
                     if (avail == null || avail <= 0) {
                         forceReadBalance();
                         avail = availableForEnqueue();
                     }
                     if (avail == null) { showToast(T.balanceUnknown, 'error'); return; }
-                    if (avail < params.price) { showToast(T.enqueueNoBudget, 'warn'); return; }
+                    // Que no alcance ya NO impide encolar: el boleto espera en la
+                    // cola y el loop lo salta hasta que haya GalaSilver. Solo se
+                    // avisa para que la espera no sea una sorpresa.
+                    if (avail < params.price) showToast(T.queueWaitsForBalance, 'warn');
                     addToQueue({
                         gid: params.gid,
                         title: title,

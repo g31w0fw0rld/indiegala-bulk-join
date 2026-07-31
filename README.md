@@ -8,7 +8,7 @@ Userscript de Tampermonkey que añade una cola unificada de compra de boletos y 
 
 **Qué hace:**
 - **Cola unificada** que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo giveaway) ejecutados en secuencia.
-- Permite añadir/quitar ítems mientras la cola corre y **valida el presupuesto** restando lo ya comprometido.
+- Permite añadir/quitar/reordenar ítems mientras la cola corre (▲▼ por fila, el orden es el de ejecución) y **encolar aunque no te alcance el saldo**: los boletos sin GalaSilver se marcan con ⏳, se saltan durante la corrida y se compran cuando tengas saldo.
 - Usa un **temporizador en Web Worker** para que las pausas no se inflen con la pestaña en segundo plano; delays humanizados y control de aborto (botón Continuar tras parar).
 - **Widget de saldo GalaSilver** con botón para abrir tu biblioteca y **revisar automáticamente** los giveaways completados (Check all) y avisarte de premios ganados hoy.
 - Opciones: ocultar los ya participados, recordar filtros de búsqueda y **selector de idioma del script** (es/en/Auto), más botón **"Saber más"**.
@@ -25,7 +25,7 @@ Userscript de Tampermonkey que añade una cola unificada de compra de boletos y 
 
 **What it does:**
 - **Unified queue** mixing "Single Ticket" (1 ticket) and "Extra Odds" (N tickets of the same giveaway) run in sequence.
-- Lets you add/remove items while the queue runs and **validates your budget** by subtracting what is already committed.
+- Lets you add/remove/reorder items while the queue runs (▲▼ per row; order is execution order) and **queue beyond your balance**: tickets you cannot afford are flagged with ⏳, skipped during the run and bought once you have GalaSilver.
 - Uses a **Web Worker timer** so pauses do not inflate when the tab is backgrounded; humanized delays and abort control (Continue button after stopping).
 - **GalaSilver balance widget** with a button to open your library and **automatically check** completed giveaways (Check all) and notify you of prizes won today.
 - Options: hide already-entered giveaways, remember search filters and a **script language selector** (es/en/Auto), plus a **"Learn more"** button.
