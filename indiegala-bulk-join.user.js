@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
 // @namespace    http://tampermonkey.net/
-// @version      1.7.7
-// @description  Anade a Indiegala Giveaways una cola unificada que mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo gid, con count por item) ejecutados secuencialmente. Permite añadir/quitar/reordenar items mientras la cola corre y encolar aunque no alcance el saldo (los boletos sin GalaSilver se saltan y esperan en la cola, no rompen la corrida), y usa un Web Worker timer para que las pausas no se inflen cuando la pestaña esta en background. Delays humanizados, control de aborto, boton Continuar tras stop recuperable. Incluye un widget de saldo GalaSilver con boton para abrir tu biblioteca en una pestaña nueva y revisar automaticamente los giveaways completados por ganar (Check all); si "Completed to check" esta vacio lo informa y de todas formas pasa a "Completed won" para detectar premios con fecha de hoy y avisarte (una sola vez por premio). ⚠️ USO BAJO TU PROPIO RIESGO: viola la politica anti-spam de Indiegala y puede causar ban permanente.
+// @version      1.7.8
+// @description  Adds a unified ticket queue to Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another. Add, remove and reorder while it runs; queue beyond your balance and unaffordable tickets are skipped and bought later instead of killing the run. Humanised pacing on a Web Worker timer so background tabs do not stretch the pauses, recoverable stop with a Continue button, a live GalaSilver widget, automatic prize checking in your library, wheel-of-fortune alerts, and listing filters that are remembered. USE AT YOUR OWN RISK: automating purchases violates Indiegala's anti-spam policy and may cause a permanent ban.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
 // @match        https://www.indiegala.com/library
@@ -48,7 +48,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.7.7';
+    const SCRIPT_VERSION = '1.7.8';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
@@ -101,7 +101,6 @@
             modalAlreadyQueued: 'Ya en cola',
             modalAffordableNow: 'Alcanzan con tu saldo',
             modalMax: 'Máximo por giveaway',
-            modalCount: 'Cantidad a comprar',
             modalCountAdd: 'Cantidad a añadir',
             modalTotalCost: 'Costo total',
             modalDelays: 'Espera entre boletos: 2.5–5 s · pausa larga 10–20 s cada 10',
@@ -191,7 +190,7 @@
             wheelAvailableAlert: '🎡 ¡La Wheel of Fortune cambió de estado (puede estar disponible para girar)! Atiéndela ahora para que no se te pase.',
             wheelSpinWon: '🎡 Ruleta: ganaste {prize}',
             wheelPrizeAfterReload: '🎡 Ruleta: ganaste {prize} · saldo actualizado',
-            wheelReloadNotice: '🎡 Ganaste {prize} · al cerrar se recarga para actualizar tu saldo',
+            wheelReloadNotice: '🎡 Ganaste {prize} · al cerrar se recarga para actualizar tu saldo'
         },
         en: {
             // Bulk join (Extra Odds)
@@ -207,7 +206,6 @@
             modalAlreadyQueued: 'Already queued',
             modalAffordableNow: 'Affordable with your balance',
             modalMax: 'Max per giveaway',
-            modalCount: 'Tickets to buy',
             modalCountAdd: 'Tickets to add',
             modalTotalCost: 'Total cost',
             modalDelays: 'Wait between tickets: 2.5–5 s · long pause 10–20 s every 10',
@@ -293,8 +291,8 @@
             wheelAvailableAlert: '🎡 The Wheel of Fortune changed state (it may be available to spin)! Go attend it now so you don\'t miss it.',
             wheelSpinWon: '🎡 Wheel: you won {prize}',
             wheelPrizeAfterReload: '🎡 Wheel: you won {prize} · balance updated',
-            wheelReloadNotice: '🎡 You won {prize} · closing it reloads the page to refresh your balance',
-        },
+            wheelReloadNotice: '🎡 You won {prize} · closing it reloads the page to refresh your balance'
+        }
     };
     const T = i18n[LANG] || i18n.en;
     const fmt = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? vars[k] : ''));
@@ -329,8 +327,8 @@
                 '• Tras girar te dice el premio y recarga al cerrar tú el popup, para que el saldo quede al día. Nunca recarga con la cola corriendo ni con un diálogo abierto.',
                 '▸ Opciones del listado',
                 '• Ocultar los giveaways en los que ya tienes boleto, recordar filtros de búsqueda (orden, nivel, texto y página) y elegir el idioma del script (es/en/Auto).',
-                'Todo se procesa en tu navegador; no se envían datos a terceros.',
-            ],
+                'Todo se procesa en tu navegador; no se envían datos a terceros.'
+            ]
         },
         en: {
             about: 'ℹ️ Learn more', close: 'Close',
@@ -359,9 +357,9 @@
                 '• After a spin it tells you the prize and reloads when you close the popup, so the balance is up to date. It never reloads while the queue runs or a dialog is open.',
                 '▸ Listing options',
                 '• Hide giveaways you already entered, remember search filters (sort, level, text and page) and choose the script language (es/en/Auto).',
-                'Everything runs in your browser; no data is sent to third parties.',
-            ],
-        },
+                'Everything runs in your browser; no data is sent to third parties.'
+            ]
+        }
     };
     const TX = EXTRA_I18N[LANG] || EXTRA_I18N.en;
 
@@ -390,7 +388,7 @@
         // Respiro tras cerrar el popup de la ruleta antes de recargar, para que
         // la animacion de cierre no se corte en seco. La recarga NO va por
         // temporizador: la dispara el cierre del popup.
-        wheelReloadGraceMs: 500,
+        wheelReloadGraceMs: 500
     };
 
     const STORAGE_KEY = 'ig-st-queue';
@@ -499,7 +497,7 @@
             count,
             done: Math.min(done, count),
             type: it.type || (count > 1 ? 'bulk' : 'single'),
-            addedAt: it.addedAt || Date.now(),
+            addedAt: it.addedAt || Date.now()
         };
     }
     function loadQueue() {
@@ -539,7 +537,7 @@
             hideEntered: false, balanceMin: false, queueMin: false,
             // Recordar filtros de busqueda del listado (sort/level/texto).
             rememberFilters: false,
-            filters: { sort: 'expiry', order: 'asc', level: 'all', search: '', page: 1 },
+            filters: { sort: 'expiry', order: 'asc', level: 'all', search: '', page: 1 }
         };
         try {
             let raw = null;
@@ -647,7 +645,7 @@
             preventDefault: () => {},
             stopPropagation: () => {},
             stopImmediatePropagation: () => {},
-            target: null,
+            target: null
         };
     }
 
@@ -676,7 +674,7 @@
             if (!isNaN(num)) return num;
         }
         const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-            acceptNode: (n) => /galasilver/i.test(n.textContent) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+            acceptNode: (n) => /galasilver/i.test(n.textContent) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT
         });
         let node;
         while ((node = walker.nextNode())) {
@@ -839,7 +837,7 @@
                             timedOut: false,
                             status: r && r.status,
                             code: r && r.code,
-                            response: r,
+                            response: r
                         });
                     } catch (_) {}
                 }
@@ -885,7 +883,7 @@
         const sels = [
             '.items-list-item-data-button a[data-price]',
             '.card-join a[data-price]',
-            'a[data-price]',
+            'a[data-price]'
         ];
         for (const sel of sels) {
             const el = scope.querySelector(sel);
@@ -2056,7 +2054,7 @@
                 updateProgress(success, totalForBar, fmt(T.queueProgressItem, {
                     title: itemLabel,
                     i: success + 1,
-                    n: totalForBar,
+                    n: totalForBar
                 }));
 
                 // Refrescar token, fnArg2 y price desde el DOM si el trigger
@@ -2135,7 +2133,7 @@
                         updateProgress(success, success + newRem, fmt(T.queueProgressItem, {
                             title: itemLabel,
                             i: success,
-                            n: success + newRem,
+                            n: success + newRem
                         }));
                     } else if (st === 'silver') {
                         // El server es la autoridad: nuestro saldo cacheado iba
@@ -2271,7 +2269,7 @@
             t: totalTickets,
             c: totalCost,
             b: balForRows,
-            items: queue.map(q => [q.gid, q.title, itemPending(q), q.price || 0, q.count || 1, q.done || 0]),
+            items: queue.map(q => [q.gid, q.title, itemPending(q), q.price || 0, q.count || 1, q.done || 0])
         });
         if (panel.dataset.sig === sig && panel.querySelector('.ig-q-list')) return;
         panel.dataset.sig = sig;
@@ -2410,7 +2408,7 @@
             position: 'fixed', inset: '0', width: '100%', height: '100%',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'rgba(0,0,0,0.6)', zIndex: '2147483647',
-            transition: 'opacity 180ms ease', opacity: '0',
+            transition: 'opacity 180ms ease', opacity: '0'
         });
         const box = document.createElement('div');
         Object.assign(box.style, {
@@ -2420,7 +2418,7 @@
             boxShadow: '0 8px 32px rgba(0,0,0,0.5)', border: '1px solid #b14cff',
             fontFamily: 'system-ui, sans-serif', fontSize: '14px', lineHeight: '1.5',
             transform: 'translateY(8px) scale(0.98)', opacity: '0',
-            transition: 'transform 180ms ease, opacity 180ms ease',
+            transition: 'transform 180ms ease, opacity 180ms ease'
         });
         const title = document.createElement('div');
         title.textContent = TX.aboutTitle;
@@ -2496,7 +2494,7 @@
             const langOptionsHtml = [
                 { v: '', label: TX.langAuto },
                 { v: 'es', label: 'Español' },
-                { v: 'en', label: 'English' },
+                { v: 'en', label: 'English' }
             ].map((o) => `<option value="${o.v}"${o.v === LANG_PREF ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('');
             w = document.createElement('div');
             w.id = BALANCE_WIDGET_ID;
@@ -2624,7 +2622,7 @@
             count: n,
             done: 0,
             type: 'bulk',
-            addedAt: Date.now(),
+            addedAt: Date.now()
         });
         const shortOnBudget = availBefore != null && availBefore < n * params.price;
         if (wasRunning) {
@@ -2731,7 +2729,7 @@
     // "13 May 2026, 09:15" → {d, mo, y} (mes 0-based) o null si no es una fecha.
     const WON_MONTHS = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
     function parseWonDate(str) {
-        const m = /(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})/.exec(String(str || ''));
+        const m = /(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})/.exec(String(str || ''));
         if (!m) return null;
         const mo = WON_MONTHS[m[2].slice(0, 3).toLowerCase()];
         if (mo == null) return null;
@@ -3084,7 +3082,7 @@
 
             [
                 document.querySelector(WHEEL_POPUP_SELECTOR + ' .fortune-wheel-dismiss'),
-                results.querySelector('button'),
+                results.querySelector('button')
             ].forEach(b => b && b.addEventListener('click', finish, { once: true }));
 
             const closed = () => isWheelPopupHidden() ||
@@ -3092,7 +3090,7 @@
             const obs = new MutationObserver(() => { if (closed()) finish(); });
             obs.observe(document.documentElement, {
                 childList: true, subtree: true,
-                attributes: true, attributeFilter: ['class', 'style'],
+                attributes: true, attributeFilter: ['class', 'style']
             });
         });
     }
@@ -3161,7 +3159,7 @@
         });
         obs.observe(document.documentElement, {
             childList: true, subtree: true,
-            attributes: true, attributeFilter: ['class'],
+            attributes: true, attributeFilter: ['class']
         });
         scan();
     }
@@ -3241,7 +3239,7 @@
         '.items-list-item-data-button.bg-gradient-green',
         '.items-list-item-ticket-click.on',
         '.items-list-item-ticket.on',
-        '.items-list-item-data-cont.on',
+        '.items-list-item-data-cont.on'
     ];
     // -------- Registro persistente de gids ya participados --------
     // Se poda al cargar (TTL) para que no crezca sin limite.
@@ -3516,7 +3514,7 @@
                         count: 1,
                         done: 0,
                         type: 'single',
-                        addedAt: Date.now(),
+                        addedAt: Date.now()
                     });
                 };
 
@@ -3573,7 +3571,7 @@
             order: f.order || FILTER_DEFAULTS.order,
             level: (f.level != null && f.level !== '') ? String(f.level) : FILTER_DEFAULTS.level,
             search: (typeof f.search === 'string') ? f.search : '',
-            page: (parseInt(f.page, 10) > 0) ? parseInt(f.page, 10) : 1,
+            page: (parseInt(f.page, 10) > 0) ? parseInt(f.page, 10) : 1
         };
     }
 
