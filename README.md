@@ -7,7 +7,7 @@ Tampermonkey userscript that adds a unified ticket-purchase queue and utilities 
 
 ![The queue panel, the GalaSilver widget and the buttons the script injects on indiegala.com/giveaways](docs/screenshot-giveaways.png)
 
-*Queue panel (bottom left), GalaSilver widget (top right) and the buttons injected on each card: ＋ to queue a Single Ticket, ✓ when already queued, ⚠×N for Extra Odds. Queued tickets you cannot afford yet are flagged with ⏳. / Panel de la cola (abajo a la izquierda), widget de GalaSilver (arriba a la derecha) y los botones que se inyectan en cada card: ＋ para encolar un Single Ticket, ✓ si ya está en cola, ⚠×N para Extra Odds. Los boletos encolados que aún no te alcanzan se marcan con ⏳.*
+*Queue panel (bottom left), GalaSilver widget (top right) and the buttons injected on each card: ＋ to queue a Single Ticket, ✓ when already queued, ✕ in the opposite corner to hide that giveaway for good, and ⚠×N on Extra Odds cards. Queued tickets you cannot afford yet are flagged with ⏳. / Panel de la cola (abajo a la izquierda), widget de GalaSilver (arriba a la derecha) y los botones que se inyectan en cada card: ＋ para encolar un Single Ticket, ✓ si ya está en cola, ✕ en la esquina opuesta para ocultar ese giveaway para siempre, y ⚠×N en las tarjetas de Extra Odds. Los boletos encolados que aún no te alcanzan se marcan con ⏳.*
 
 <img src="docs/screenshot-giveaways-mobile.png" width="375" alt="The same queue and balance widget on a phone-sized viewport">
 
@@ -40,8 +40,9 @@ Tampermonkey userscript that adds a unified ticket-purchase queue and utilities 
 - After a spin it reads the prize, tells you which one, and reloads **when you close the popup** — not on a timer — so your balance and the menu are up to date without cutting your reading short. It never reloads while the queue is running or a dialog is open.
 
 **Listing options**
-- **Hide giveaways you already entered** (remembered across reloads).
 - **Remember search filters:** sort, level filter, search text and page, re-applied on load.
+- **Hide giveaways you already entered** (remembered across reloads).
+- **Hide a giveaway by hand:** the **✕** on each card (opposite corner to that card's own control) hides it for good, in your browser only. **"Show the ones I hid"** brings them back dimmed so you can restore one with **↺**, and **"Clear hidden (N)"** empties the whole list.
 - **Script language:** Spanish, English or Auto.
 - **"Learn more"** button with a summary inside the page.
 - Layout adapted to phones.
@@ -81,8 +82,9 @@ Tampermonkey userscript that adds a unified ticket-purchase queue and utilities 
 - Tras un giro lee el premio, te dice cuál es, y recarga **al cerrar tú el popup** —no por temporizador— para que el saldo y el menú queden al día sin cortarte la lectura. Nunca recarga con la cola corriendo ni con un diálogo abierto.
 
 **Opciones del listado**
-- **Ocultar los giveaways en los que ya tienes boleto** (se recuerda al recargar).
 - **Recordar filtros de búsqueda:** orden, filtro de nivel, texto y página, reaplicados al cargar.
+- **Ocultar los giveaways en los que ya tienes boleto** (se recuerda al recargar).
+- **Ocultar un giveaway a mano:** la **✕** de cada tarjeta (en la esquina opuesta al control propio de esa tarjeta) lo oculta para siempre, solo en tu navegador. **"Mostrar ocultos por mí"** los devuelve atenuados para restaurar uno con **↺**, y **"Limpiar ocultos (N)"** vacía la lista entera.
 - **Idioma del script:** español, inglés o Auto.
 - Botón **"Saber más"** con un resumen dentro de la página.
 - Layout adaptado a móviles.

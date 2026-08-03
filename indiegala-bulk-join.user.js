@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
 // @namespace    http://tampermonkey.net/
-// @version      1.7.8
-// @description  Adds a unified ticket queue to Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another. Add, remove and reorder while it runs; queue beyond your balance and unaffordable tickets are skipped and bought later instead of killing the run. Humanised pacing on a Web Worker timer so background tabs do not stretch the pauses, recoverable stop with a Continue button, a live GalaSilver widget, automatic prize checking in your library, wheel-of-fortune alerts, and listing filters that are remembered. USE AT YOUR OWN RISK: automating purchases violates Indiegala's anti-spam policy and may cause a permanent ban.
+// @version      1.7.9
+// @description  Unified ticket queue for Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another. Add, remove and reorder mid-run; tickets you cannot afford wait in the queue instead of killing it. Humanised pacing on a Web Worker timer, recoverable stop, GalaSilver widget, prize checking in your library, wheel-of-fortune alerts, remembered filters and per-card hiding. USE AT YOUR OWN RISK: automating purchases violates Indiegala's anti-spam policy and may cause a permanent ban.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
 // @match        https://www.indiegala.com/library
@@ -48,7 +48,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.7.8';
+    const SCRIPT_VERSION = '1.7.9';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
@@ -116,6 +116,10 @@
             queueAddBtnTooltip: '⚠ Riesgo de ban — añadir este giveaway a la cola para entrar automáticamente. Uso bajo tu propio riesgo.',
             queueRemoveBtn: '✓',
             queueRemoveBtnTooltip: 'En cola — clic para quitar',
+            ignoreBtn: '✕',
+            ignoreBtnTooltip: 'No mostrarme más este giveaway. Solo afecta a lo que ves: no entra en la cola ni cambia nada en Indiegala. Reversible desde el widget.',
+            ignoreUndoBtn: '↺',
+            ignoreUndoBtnTooltip: 'Oculto por ti — clic para volver a mostrarlo',
             queueMoveUp: 'Subir — se intentará antes',
             queueMoveDown: 'Bajar — se intentará después',
             queueWaitsForBalance: 'Sin saldo ahora — queda en cola y se compra cuando tengas GalaSilver',
@@ -170,6 +174,12 @@
             widgetBalanceUnknown: '— iS',
             widgetHideEntered: 'Ocultar ya participados',
             widgetHideEnteredTooltip: 'Oculta del listado los giveaways en los que ya tienes boleto. Se recuerda al recargar hasta que lo desmarques.',
+            widgetShowIgnored: 'Mostrar ocultos por mí',
+            widgetShowIgnoredTooltip: 'Vuelve a mostrar (atenuados y con marco rojo) los giveaways que ocultaste con ✕, para poder sacarlos de la lista con el botón ↺. No los desoculta de forma permanente.',
+            widgetClearIgnored: '🧹 Limpiar ocultos ({n})',
+            widgetClearIgnoredTooltip: 'Vacía la lista de giveaways que ocultaste con ✕: todos vuelven a aparecer. No se puede deshacer.',
+            clearIgnoredConfirm: '¿Volver a mostrar los {n} giveaways que ocultaste? No se puede deshacer.',
+            clearIgnoredDone: 'Lista de ocultos vaciada ({n}).',
             widgetRememberFilters: 'Recordar filtros de búsqueda',
             widgetRememberFiltersTooltip: 'Guarda el orden, el filtro de nivel, el texto de búsqueda y la página actual, y los re-aplica al recargar. Se sobrescriben cuando los cambias. Si la página guardada ya no existe, vuelve a la 1.',
             widgetMinimize: 'Minimizar widget',
@@ -221,6 +231,10 @@
             queueAddBtnTooltip: '⚠ Ban risk — add this giveaway to the queue for automatic entry. Use at your own risk.',
             queueRemoveBtn: '✓',
             queueRemoveBtnTooltip: 'In queue — click to remove',
+            ignoreBtn: '✕',
+            ignoreBtnTooltip: 'Do not show me this giveaway again. It only affects what you see: it is not queued and nothing changes on Indiegala. Reversible from the widget.',
+            ignoreUndoBtn: '↺',
+            ignoreUndoBtnTooltip: 'Hidden by you — click to show it again',
             queueMoveUp: 'Move up — tried sooner',
             queueMoveDown: 'Move down — tried later',
             queueWaitsForBalance: 'No balance right now — it stays queued and is bought once you have GalaSilver',
@@ -271,6 +285,12 @@
             widgetBalanceUnknown: '— iS',
             widgetHideEntered: 'Hide already entered',
             widgetHideEnteredTooltip: 'Hides from the listing the giveaways you already hold a ticket in. Remembered across reloads until you uncheck it.',
+            widgetShowIgnored: 'Show the ones I hid',
+            widgetShowIgnoredTooltip: 'Brings back (dimmed, with a red frame) the giveaways you hid with ✕, so you can take them off the list with the ↺ button. It does not un-hide them permanently.',
+            widgetClearIgnored: '🧹 Clear hidden ({n})',
+            widgetClearIgnoredTooltip: 'Empties the list of giveaways you hid with ✕: all of them show up again. Cannot be undone.',
+            clearIgnoredConfirm: 'Show the {n} giveaways you hid again? This cannot be undone.',
+            clearIgnoredDone: 'Hidden list cleared ({n}).',
             widgetRememberFilters: 'Remember search filters',
             widgetRememberFiltersTooltip: 'Saves the sort order, level filter, search text and current page, and re-applies them on reload. Overwritten whenever you change them. Falls back to page 1 if the saved page no longer exists.',
             widgetMinimize: 'Minimize widget',
@@ -326,7 +346,8 @@
                 '• Recarga /giveaways cada 15 min mientras la cola está parada, para avisarte si la ruleta cambia de estado.',
                 '• Tras girar te dice el premio y recarga al cerrar tú el popup, para que el saldo quede al día. Nunca recarga con la cola corriendo ni con un diálogo abierto.',
                 '▸ Opciones del listado',
-                '• Ocultar los giveaways en los que ya tienes boleto, recordar filtros de búsqueda (orden, nivel, texto y página) y elegir el idioma del script (es/en/Auto).',
+                '• Recordar filtros de búsqueda (orden, nivel, texto y página), ocultar los giveaways en los que ya tienes boleto y elegir el idioma del script (es/en/Auto).',
+                '• El botón ✕ de cada tarjeta oculta ese giveaway para siempre (solo en tu navegador), en la esquina opuesta al ＋ o al badge ⚠×N. "Mostrar ocultos por mí" los devuelve atenuados para sacarlos de la lista con ↺, y "Limpiar ocultos (N)" la vacía de golpe.',
                 'Todo se procesa en tu navegador; no se envían datos a terceros.'
             ]
         },
@@ -356,7 +377,8 @@
                 '• Reloads /giveaways every 15 min while the queue is idle, to alert you if the wheel changes state.',
                 '• After a spin it tells you the prize and reloads when you close the popup, so the balance is up to date. It never reloads while the queue runs or a dialog is open.',
                 '▸ Listing options',
-                '• Hide giveaways you already entered, remember search filters (sort, level, text and page) and choose the script language (es/en/Auto).',
+                '• Remember search filters (sort, level, text and page), hide giveaways you already entered and choose the script language (es/en/Auto).',
+                '• The ✕ button on each card hides that giveaway for good (in your browser only), in the corner opposite the ＋ or the ⚠×N badge. "Show the ones I hid" brings them back dimmed so you can take them off the list with ↺, and "Clear hidden (N)" empties it in one go.',
                 'Everything runs in your browser; no data is sent to third parties.'
             ]
         }
@@ -394,6 +416,7 @@
     const STORAGE_KEY = 'ig-st-queue';
     // Preferencias persistentes del usuario (independientes de la cola):
     //   hideEntered     -> ocultar del listado los giveaways en los que ya tienes boleto
+    //   showIgnored     -> mostrar (atenuados) los giveaways ocultados a mano con ✕
     //   balanceMin      -> widget de saldo minimizado
     //   queueMin        -> panel de cola minimizado
     //   rememberFilters -> recordar y reaplicar sort/level/busqueda al recargar
@@ -410,9 +433,18 @@
     // Los giveaways duran dias o semanas; a los 60 dias el gid ya no vuelve a
     // aparecer en el listado y solo engordaria el storage.
     const ENTERED_GIDS_TTL_MS = 60 * 24 * 60 * 60 * 1000;
+    // Registro { gid: timestamp } de giveaways que el usuario mando ocultar a
+    // mano con el boton ✕ ("no mostrarme mas"). Es una lista aparte de
+    // ENTERED_GIDS: esa es un hecho observado del sitio (ya tienes boleto) y se
+    // reconstruye sola; esta es una decision del usuario y solo el la revierte.
+    const IGNORED_GIDS_KEY = 'ig-bulk-ignored-gids';
+    // Mismo razonamiento de poda que ENTERED_GIDS_TTL_MS: pasados 60 dias el
+    // giveaway ya no existe y su gid solo engordaria el storage.
+    const IGNORED_GIDS_TTL_MS = 60 * 24 * 60 * 60 * 1000;
     const BULK_BTN_CLASS = 'ig-bulk-join-btn';
     const BULK_BADGE_CLASS = 'ig-bulk-join-badge';
     const QBTN_CLASS = 'ig-q-btn';
+    const IGN_BTN_CLASS = 'ig-ign-btn';
     const PANEL_ID = 'ig-q-panel';
     const PROGRESS_OVERLAY_ID = 'ig-bulk-progress-overlay';
     const MODAL_ID = 'ig-bulk-modal';
@@ -534,7 +566,7 @@
     // recargas. Defaults conservadores: nada oculto, widgets expandidos.
     function loadSettings() {
         const def = {
-            hideEntered: false, balanceMin: false, queueMin: false,
+            hideEntered: false, showIgnored: false, balanceMin: false, queueMin: false,
             // Recordar filtros de busqueda del listado (sort/level/texto).
             rememberFilters: false,
             filters: { sort: 'expiry', order: 'asc', level: 'all', search: '', page: 1 }
@@ -1114,6 +1146,40 @@
                 border-color: rgba(255, 207, 102, 0.7);
             }
 
+            /* Boton "no mostrarme mas" / "quitar de ignorados". Va en la esquina
+               OPUESTA al control propio de la tarjeta (ver injectIgnoreControls):
+               Single Ticket lleva el ＋ a la izquierda, asi que el ✕ va a la
+               derecha; Extra Odds lleva el badge a la derecha y el ✕ va a la
+               izquierda. Nunca coinciden porque una tarjeta es de un solo tipo. */
+            .${IGN_BTN_CLASS} {
+                position: absolute;
+                top: 6px;
+                z-index: 51;
+                width: 22px; height: 22px;
+                line-height: 20px;
+                text-align: center;
+                font-size: 12px; font-weight: bold;
+                color: #fff;
+                background: rgba(50, 50, 50, 0.8);
+                border: 2px solid rgba(255, 255, 255, 0.25);
+                border-radius: 50%;
+                cursor: pointer;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+                user-select: none;
+                opacity: 0.55;
+                transition: transform 0.1s, opacity 0.15s, background 0.15s;
+            }
+            .${IGN_BTN_CLASS}:hover { transform: scale(1.15); opacity: 1; background: rgba(198, 40, 40, 0.95); }
+            .${IGN_BTN_CLASS}.ig-ign-left { left: 6px; }
+            .${IGN_BTN_CLASS}.ig-ign-right { right: 6px; }
+            /* Estado "ya ignorado": el mismo boton restaura, y se ve siempre. */
+            .${IGN_BTN_CLASS}.ig-ign-btn-undo {
+                opacity: 1;
+                background: linear-gradient(135deg, #1565c0 0%, #42a5f5 100%);
+                border-color: #fff;
+            }
+            .${IGN_BTN_CLASS}.ig-ign-btn-undo:hover { background: linear-gradient(135deg, #1565c0 0%, #42a5f5 100%); }
+
             #${PANEL_ID} {
                 position: fixed;
                 bottom: 20px; left: 20px;
@@ -1453,9 +1519,14 @@
                 transition: filter 0.15s;
             }
             #${BALANCE_WIDGET_ID} .ig-bw-btn:hover { filter: brightness(1.15); }
-            /* "Saber más": estilo outline (distinto del gradiente) y separado del boton de arriba. */
-            #${BALANCE_WIDGET_ID} .ig-bw-about {
-                margin-top: 10px;
+            /* Botones consecutivos: sin esto quedan pegados y se leen como uno
+               solo con dos mitades de color, no como dos acciones distintas. */
+            #${BALANCE_WIDGET_ID} .ig-bw-btn + .ig-bw-btn { margin-top: 8px; }
+            /* "Saber más": estilo outline (distinto del gradiente) y mas separado
+               que el resto — no es una accion del listado, cierra el widget.
+               Selector con dos clases para ganarle al margen de arriba. */
+            #${BALANCE_WIDGET_ID} .ig-bw-btn.ig-bw-about {
+                margin-top: 14px;
                 background: transparent;
                 color: #c88bff;
                 border: 1px solid #b14cff;
@@ -1489,6 +1560,21 @@
 
             /* Ocultar giveaways en los que ya tienes boleto (toggle persistente). */
             .ig-entered-hidden { display: none !important; }
+
+            /* Ocultados a mano con ✕. Clase aparte de .ig-entered-hidden para que
+               los dos filtros no se pisen: cada pasada pone y quita solo la suya. */
+            .ig-ignored-hidden { display: none !important; }
+            /* Con "Mostrar ocultos" activo el giveaway sigue visible pero apagado,
+               para que se distinga de los que si cuentan. El hover lo devuelve a
+               color: sin eso, el boton de restaurar se lee a medias. */
+            .ig-ignored-shown {
+                opacity: 0.45;
+                filter: grayscale(1);
+                outline: 2px dashed rgba(211, 47, 47, 0.6);
+                outline-offset: -2px;
+                transition: opacity 0.15s, filter 0.15s;
+            }
+            .ig-ignored-shown:hover { opacity: 1; filter: none; }
 
             /* Header del panel de cola: titulo + boton minimizar. */
             #${PANEL_ID} .ig-q-head {
@@ -2507,19 +2593,24 @@
                     <div class="ig-bw-amount" id="ig-bw-amount">${T.widgetBalanceUnknown}</div>
                     <div class="ig-bw-avail" id="ig-bw-avail" style="display:none"></div>
                     <div class="ig-bw-credit" id="ig-bw-credit" style="display:none"></div>
+                    <label class="ig-bw-toggle" title="${escapeHtml(T.widgetRememberFiltersTooltip)}">
+                        <input type="checkbox" id="ig-bw-remember-filters">
+                        <span>${T.widgetRememberFilters}</span>
+                    </label>
                     <label class="ig-bw-toggle" title="${escapeHtml(T.widgetHideEnteredTooltip)}">
                         <input type="checkbox" id="ig-bw-hide-entered">
                         <span>${T.widgetHideEntered}</span>
                     </label>
-                    <label class="ig-bw-toggle" title="${escapeHtml(T.widgetRememberFiltersTooltip)}">
-                        <input type="checkbox" id="ig-bw-remember-filters">
-                        <span>${T.widgetRememberFilters}</span>
+                    <label class="ig-bw-toggle" id="ig-bw-show-ignored-row" style="display:none" title="${escapeHtml(T.widgetShowIgnoredTooltip)}">
+                        <input type="checkbox" id="ig-bw-show-ignored">
+                        <span>${T.widgetShowIgnored}</span>
                     </label>
                     <label class="ig-bw-toggle" title="${escapeHtml(TX.langTip)}">
                         <span>${TX.langLabel}</span>
                         <select id="ig-bw-lang" style="margin-left:4px;">${langOptionsHtml}</select>
                     </label>
                     <button type="button" class="ig-bw-btn" id="ig-bw-check" title="${escapeHtml(T.widgetCheckBtnTooltip)}">${T.widgetCheckBtn}</button>
+                    <button type="button" class="ig-bw-btn" id="ig-bw-clear-ignored" style="display:none" title="${escapeHtml(T.widgetClearIgnoredTooltip)}"></button>
                     <button type="button" class="ig-bw-btn ig-bw-about" id="ig-bw-about" title="${escapeHtml(TX.aboutTip)}">${TX.about}</button>
                 </div>
             `;
@@ -2542,6 +2633,27 @@
                 saveSettings();
                 applyHideEntered();
             });
+            // Toggle "Mostrar ocultos": no borra nada, solo cambia si los
+            // ignorados se esconden o se ven atenuados (con su boton de ↺).
+            const showIgnChk = w.querySelector('#ig-bw-show-ignored');
+            showIgnChk.addEventListener('change', () => {
+                settings.showIgnored = showIgnChk.checked;
+                saveSettings();
+                applyIgnored();
+            });
+            // "Limpiar ignorados": destructivo y sin deshacer, de ahi el confirm.
+            const clearIgnBtn = w.querySelector('#ig-bw-clear-ignored');
+            clearIgnBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const n = ignoredCount();
+                if (!n) return;
+                const ok = await showConfirm(fmt(T.clearIgnoredConfirm, { n }));
+                if (!ok) return;
+                clearIgnoredGids();
+                applyIgnored();
+                refreshIgnoredWidget();
+                showToast(fmt(T.clearIgnoredDone, { n }), 'success');
+            });
             // Toggle "Recordar filtros de busqueda": al activarlo, snapshotea el
             // estado actual para que sobreviva la proxima recarga.
             const remChk = w.querySelector('#ig-bw-remember-filters');
@@ -2563,6 +2675,7 @@
         if (hideChk) hideChk.checked = !!settings.hideEntered;
         const remChk = w.querySelector('#ig-bw-remember-filters');
         if (remChk) remChk.checked = !!settings.rememberFilters;
+        refreshIgnoredWidget();
         applyBalanceMinState(w);
         const bal = getCurrentBalance();
         const amountEl = w.querySelector('#ig-bw-amount');
@@ -3303,6 +3416,74 @@
         return m ? m[1] : null;
     }
 
+    // -------- Registro persistente de gids ignorados a mano ("no mostrarme mas") --------
+    // Mismo patron de doble persistencia y poda por TTL que enteredGids, pero
+    // con semantica distinta: aqui la fuente de verdad es el usuario, no el DOM,
+    // asi que nada lo escribe salvo los botones ✕ / ↺ y "limpiar ignorados".
+    let ignoredGids = null;
+    function loadIgnoredGids() {
+        if (ignoredGids) return ignoredGids;
+        let raw = null;
+        try {
+            if (typeof GM_getValue !== 'undefined') {
+                const v = GM_getValue(IGNORED_GIDS_KEY, null);
+                if (v && typeof v === 'object' && !Array.isArray(v)) raw = v;
+                else if (typeof v === 'string') { try { raw = JSON.parse(v); } catch (_) { raw = null; } }
+            }
+            if (!raw) {
+                const s = localStorage.getItem(IGNORED_GIDS_KEY);
+                raw = s ? JSON.parse(s) : null;
+            }
+        } catch (e) {
+            console.error('[IG-BulkTools] loadIgnoredGids error:', e);
+        }
+        ignoredGids = {};
+        const cutoff = Date.now() - IGNORED_GIDS_TTL_MS;
+        if (raw && typeof raw === 'object') {
+            Object.keys(raw).forEach(gid => {
+                const ts = Number(raw[gid]);
+                if (!isNaN(ts) && ts > cutoff) ignoredGids[gid] = ts;
+            });
+        }
+        return ignoredGids;
+    }
+    function saveIgnoredGids() {
+        try {
+            const json = JSON.stringify(ignoredGids || {});
+            if (typeof GM_setValue !== 'undefined') GM_setValue(IGNORED_GIDS_KEY, json);
+            localStorage.setItem(IGNORED_GIDS_KEY, json);
+        } catch (e) {
+            console.error('[IG-BulkTools] saveIgnoredGids error:', e);
+        }
+    }
+    function isGidIgnored(gid) {
+        if (gid == null || gid === '') return false;
+        return !!loadIgnoredGids()[String(gid)];
+    }
+    function ignoredCount() {
+        return Object.keys(loadIgnoredGids()).length;
+    }
+    function addIgnoredGid(gid) {
+        if (gid == null || gid === '') return;
+        const map = loadIgnoredGids();
+        const key = String(gid);
+        if (map[key]) return;
+        map[key] = Date.now();
+        saveIgnoredGids();
+    }
+    function removeIgnoredGid(gid) {
+        if (gid == null || gid === '') return;
+        const map = loadIgnoredGids();
+        const key = String(gid);
+        if (!map[key]) return;
+        delete map[key];
+        saveIgnoredGids();
+    }
+    function clearIgnoredGids() {
+        ignoredGids = {};
+        saveIgnoredGids();
+    }
+
     // -------- Deteccion de items colgados en `wait` --------
     // Un item cargado trae un `.items-list-item-data-cont` (hermano del
     // <figcaption>) con tiempo, vendidos y el control de compra.
@@ -3415,6 +3596,84 @@
                 try { applyHideEntered(); } catch (e) { console.error('[IG-BulkTools] applyHideEntered retry:', e); }
             }, CFG.staleWaitMs + 250);
         }
+    }
+
+    // =============================================
+    // OCULTAR A MANO: boton ✕ / ↺ por tarjeta
+    // =============================================
+    // Pasada propia, independiente de injectListing, y a proposito: injectListing
+    // aborta el item si no encuentra `a.items-list-item-ticket-click` (el trigger
+    // de join), que es justo lo que le falta a un giveaway ya participado. Si el
+    // boton viviera ahi, un giveaway ignorado Y participado se quedaria sin ↺ y
+    // no habria forma de sacarlo de ignorados desde el listado.
+    function applyIgnored() {
+        if (isLibrary()) return;
+        const show = !!settings.showIgnored;
+        document.querySelectorAll('.items-list-item').forEach(item => {
+            const gid = getItemGid(item);
+            const cell = item.closest('.items-list-col') || item;
+            // Sin gid no hay a que colgar la preferencia (item a medio cargar sin
+            // titulo): se deja intacto y la siguiente pasada lo recoge.
+            if (!gid) return;
+
+            const host = item.querySelector(':scope > .relative') || item;
+            if (window.getComputedStyle(host).position === 'static') host.style.position = 'relative';
+
+            const ignored = isGidIgnored(gid);
+            let btn = host.querySelector('.' + IGN_BTN_CLASS);
+            if (!btn) {
+                btn = document.createElement('div');
+                btn.className = IGN_BTN_CLASS;
+                // El gid NO se captura en el closure: se lee del dataset al
+                // pulsar. Si Indiegala reutiliza el nodo del item al paginar (el
+                // boton sobrevive con otro giveaway dentro), un gid capturado
+                // ocultaria el giveaway equivocado; el dataset lo reescribe cada
+                // pasada y siempre corresponde a lo que se ve.
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const g = btn.dataset.gid;
+                    if (!g) return;
+                    if (isGidIgnored(g)) removeIgnoredGid(g); else addIgnoredGid(g);
+                    applyIgnored();
+                    refreshIgnoredWidget();
+                });
+                host.appendChild(btn);
+            }
+            btn.dataset.gid = gid;
+            // Esquina opuesta al control propio de la tarjeta: el badge de Extra
+            // Odds ocupa la derecha, el ＋ de Single Ticket la izquierda. Se
+            // recalcula cada pasada por el mismo motivo que el gid.
+            const typeEl = item.querySelector('.items-list-item-type');
+            const typeText = ((typeEl && typeEl.textContent) || '').trim().toLowerCase();
+            const isExtraOdds = (typeEl && typeEl.classList.contains('items-list-item-type-indiegala'))
+                || /extra\s*odds/i.test(typeText);
+            btn.classList.toggle('ig-ign-left', isExtraOdds);
+            btn.classList.toggle('ig-ign-right', !isExtraOdds);
+            btn.classList.toggle('ig-ign-btn-undo', ignored);
+            btn.textContent = ignored ? T.ignoreUndoBtn : T.ignoreBtn;
+            btn.title = ignored ? T.ignoreUndoBtnTooltip : T.ignoreBtnTooltip;
+
+            cell.classList.toggle('ig-ignored-hidden', ignored && !show);
+            cell.classList.toggle('ig-ignored-shown', ignored && show);
+        });
+    }
+
+    // Sincroniza el widget con el numero de ignorados: el boton de limpiar solo
+    // existe cuando hay algo que limpiar, y el toggle no sirve de nada vacio.
+    function refreshIgnoredWidget() {
+        const w = document.getElementById(BALANCE_WIDGET_ID);
+        if (!w) return;
+        const n = ignoredCount();
+        const clearBtn = w.querySelector('#ig-bw-clear-ignored');
+        if (clearBtn) {
+            clearBtn.textContent = fmt(T.widgetClearIgnored, { n });
+            clearBtn.style.display = n > 0 ? '' : 'none';
+        }
+        const showRow = w.querySelector('#ig-bw-show-ignored-row');
+        if (showRow) showRow.style.display = n > 0 ? '' : 'none';
+        const showChk = w.querySelector('#ig-bw-show-ignored');
+        if (showChk) showChk.checked = !!settings.showIgnored;
     }
 
     function injectListing() {
@@ -3802,6 +4061,7 @@
         try { injectCardDetail(); } catch (e) { console.error('[IG-BulkTools] injectCardDetail:', e); }
         try { injectListing(); } catch (e) { console.error('[IG-BulkTools] injectListing:', e); }
         try { applyHideEntered(); } catch (e) { console.error('[IG-BulkTools] applyHideEntered:', e); }
+        try { applyIgnored(); } catch (e) { console.error('[IG-BulkTools] applyIgnored:', e); }
         try { bindSearchCapture(); } catch (e) {}
         try { captureFilters(); } catch (e) { console.error('[IG-BulkTools] captureFilters:', e); }
         try { renderQueuePanel(); } catch (e) { console.error('[IG-BulkTools] renderQueuePanel:', e); }
