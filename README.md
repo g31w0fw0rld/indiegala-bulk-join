@@ -13,6 +13,10 @@ Tampermonkey userscript that adds a unified ticket-purchase queue and utilities 
 
 *Same queue on a phone: the panel goes full width along the bottom, the widget clears the site header, and every row keeps its ▲▼ reorder controls. / La misma cola en un móvil: el panel pasa a ancho completo abajo, el widget se aparta del header del sitio y cada fila conserva sus controles ▲▼ para reordenar.*
 
+![The GG.deals and PCGamingWiki buttons closing the price box on an IndieGala store product page](docs/screenshot-store.png)
+
+*Store product page: GG.deals and PCGamingWiki close the price box, right under Add to Cart, in each brand's colour so they do not pass for another button of the store. Games, DLC and packs all get the same pair. / Ficha de la tienda: GG.deals y PCGamingWiki cierran la caja de precio, justo debajo de Add to Cart, con el color de cada marca para que no se confundan con otro botón de la tienda. Juegos, DLC y packs llevan el mismo par.*
+
 ## English
 
 ### What it does
