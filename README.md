@@ -1,6 +1,6 @@
-# Indiegala Giveaway Bulk Tools
+# Indiegala Bulk Tools
 
-Tampermonkey userscript that adds a unified ticket-purchase queue and utilities to Indiegala giveaways. / Userscript de Tampermonkey que añade una cola unificada de compra de boletos y utilidades a los giveaways de Indiegala.
+Tampermonkey userscript that adds a unified ticket-purchase queue and utilities to Indiegala giveaways, plus two lookup buttons on store product pages. / Userscript de Tampermonkey que añade una cola unificada de compra de boletos y utilidades a los giveaways de Indiegala, y dos botones de consulta en las fichas de la tienda.
 
 > [!WARNING]
 > **USE AT YOUR OWN RISK / USO BAJO TU PROPIO RIESGO:** automating purchases violates Indiegala's anti-spam policy and may cause a permanent ban. / Automatizar compras viola la política anti-spam de Indiegala y puede causar un baneo permanente.
@@ -47,13 +47,21 @@ Tampermonkey userscript that adds a unified ticket-purchase queue and utilities 
 - **"Learn more"** button with a summary inside the page.
 - Layout adapted to phones.
 
+**Store pages** (`/store/game/*`, `/store/product/*` — games, DLC and packs alike)
+- **[GG.deals](https://gg.deals/)** — where else that game is on sale, and for how much. It searches the **catalogue** by title (`/games/`), the same target the Humble Bundle script uses, so you land on the game's own page with its history and every offer.
+- **[PCGamingWiki](https://www.pcgamingwiki.com/)** — compatibility, fixes, ultrawide and frame-rate notes. It searches by title.
+- **Both are title searches, so they can miss**, and each says exactly that in its tooltip.
+- **No DRM filter, on purpose.** Steam, GOG, Epic and Microsoft Store are single-DRM shops, so their scripts can pin GG.deals' DRM filter and always be right. IndieGala resells keys for several stores *and* sells DRM-free games, so there is no filter that is correct for the whole store — and the catalogue search ignores that parameter anyway.
+- **The title comes from the page's own purchase button**, the cleanest source: the `<h1>` drags the delivery suffix along (`DOOM VFR *Steam Key*`) and sometimes the destination store in brackets (`Sid Meier's Civilization VI (Epic)`), and neither belongs in a search. Accents are dropped for GG.deals, which transliterates in its index, and kept for PCGamingWiki.
+- Nothing else from this script runs on the store: no queue, no automation, no warnings. Just two links under *Add to Cart*.
+
 **Language:** automatic Spanish / English detection (with manual override).
 
 **Install:**
 1. Install [Tampermonkey](https://www.tampermonkey.net/).
 2. Open the installer: [indiegala-bulk-join.user.js](https://github.com/g31w0fw0rld/indiegala-bulk-join/raw/main/indiegala-bulk-join.user.js) (also on [GreasyFork](https://greasyfork.org/es-419/users/1590477-g31w) and [OpenUserJS](https://openuserjs.org/users/g31w0fw0rldgmail.com/scripts)).
 
-**Sites:** `indiegala.com/giveaways`, `indiegala.com/library`
+**Sites:** `indiegala.com/giveaways`, `indiegala.com/library`, `indiegala.com/store/game/*` and `indiegala.com/store/product/*`
 
 ## Español
 
@@ -89,19 +97,27 @@ Tampermonkey userscript that adds a unified ticket-purchase queue and utilities 
 - Botón **"Saber más"** con un resumen dentro de la página.
 - Layout adaptado a móviles.
 
+**Fichas de la tienda** (`/store/game/*`, `/store/product/*` — juegos, DLC y packs por igual)
+- **[GG.deals](https://gg.deals/)** —en qué otras tiendas está de oferta ese juego, y a cuánto—. Busca por título en el **catálogo** (`/games/`), el mismo destino que usa el script de Humble Bundle, así que caes en la ficha del juego con su histórico y todas sus ofertas.
+- **[PCGamingWiki](https://www.pcgamingwiki.com/)** —compatibilidad, arreglos, ultrapanorámico y notas de frame rate—. Busca por título.
+- **Los dos buscan por nombre, así que pueden no acertar**, y cada uno lo dice tal cual en su tooltip.
+- **Sin filtro de DRM, a propósito.** Steam, GOG, Epic y Microsoft Store son tiendas de un solo DRM, así que sus scripts pueden fijar el filtro de GG.deals y acertar siempre. IndieGala revende llaves de varias tiendas *y* vende juegos sin DRM, así que no hay un filtro correcto para toda la tienda —y la búsqueda del catálogo ignora ese parámetro de todas formas—.
+- **El título sale del propio botón de compra de la página**, que es la fuente más limpia: el `<h1>` arrastra el sufijo de entrega (`DOOM VFR *Steam Key*`) y a veces la tienda de destino entre paréntesis (`Sid Meier's Civilization VI (Epic)`), y ninguna de las dos cosas pinta nada en una búsqueda. Los acentos se quitan para GG.deals, que translitera en su índice, y se conservan para PCGamingWiki.
+- En la tienda no corre nada más del script: ni cola, ni automatización, ni advertencias. Solo dos enlaces bajo *Add to Cart*.
+
 **Idioma:** detección automática español / inglés (con override manual).
 
 **Instalación:**
 1. Instala [Tampermonkey](https://www.tampermonkey.net/).
 2. Abre el instalador: [indiegala-bulk-join.user.js](https://github.com/g31w0fw0rld/indiegala-bulk-join/raw/main/indiegala-bulk-join.user.js) (también en [GreasyFork](https://greasyfork.org/es-419/users/1590477-g31w) y [OpenUserJS](https://openuserjs.org/users/g31w0fw0rldgmail.com/scripts)).
 
-**Sitios:** `indiegala.com/giveaways`, `indiegala.com/library`
+**Sitios:** `indiegala.com/giveaways`, `indiegala.com/library`, `indiegala.com/store/game/*` e `indiegala.com/store/product/*`
 
 ## Privacy / Privacidad
 
-**EN:** the script makes no requests of its own, neither to Indiegala nor to third parties: it automates clicks on the site's own buttons, so the requests that go out are Indiegala's with your existing session, and the library button just opens `indiegala.com/library` in a new tab. The GalaSilver balance and giveaway states are read from the page. It stores in your browser (`localStorage` on `indiegala.com` and the userscript manager's storage) only the pending queue, your settings and budget, the prizes it has already notified you about, and your language preference. Nothing is sent to third parties or to the author. Beyond privacy, keep the warning above in mind: automating violates Indiegala's anti-spam policy and synthetic clicks are detectable by the site.
+**EN:** the script makes no requests of its own, neither to Indiegala nor to third parties: it automates clicks on the site's own buttons, so the requests that go out are Indiegala's with your existing session, and the library button just opens `indiegala.com/library` in a new tab. The GalaSilver balance and giveaway states are read from the page. It stores in your browser (`localStorage` on `indiegala.com` and the userscript manager's storage) only the pending queue, your settings and budget, the prizes it has already notified you about, and your language preference. The only request that leaves your browser is the GG.deals favicon on store product pages, so that site sees a plain image request when the buttons are drawn — nothing about which game you are looking at (the PCGamingWiki logo is inline SVG and requests nothing). Nothing is sent to third parties or to the author. Beyond privacy, keep the warning above in mind: automating violates Indiegala's anti-spam policy and synthetic clicks are detectable by the site.
 
-**ES:** el script no hace ninguna petición propia ni a Indiegala ni a terceros: automatiza clics sobre los botones del propio sitio, así que las peticiones que salen son las de Indiegala con tu sesión de siempre, y el botón de biblioteca solo abre `indiegala.com/library` en otra pestaña. El saldo GalaSilver y el estado de los giveaways se leen de la página. Guarda en tu navegador (`localStorage` de `indiegala.com` y el almacenamiento del gestor de userscripts) solo la cola pendiente, tus ajustes y presupuesto, los premios de los que ya te avisó y tu preferencia de idioma. No se envía nada a terceros ni al autor. Aparte de la privacidad, recuerda el aviso de arriba: automatizar viola la política anti-spam de Indiegala y los clics sintéticos son detectables por el sitio.
+**ES:** el script no hace ninguna petición propia ni a Indiegala ni a terceros salvo un icono (ver más abajo): automatiza clics sobre los botones del propio sitio, así que las peticiones que salen son las de Indiegala con tu sesión de siempre, y el botón de biblioteca solo abre `indiegala.com/library` en otra pestaña. El saldo GalaSilver y el estado de los giveaways se leen de la página. Guarda en tu navegador (`localStorage` de `indiegala.com` y el almacenamiento del gestor de userscripts) solo la cola pendiente, tus ajustes y presupuesto, los premios de los que ya te avisó y tu preferencia de idioma. La única petición que sale de tu navegador es el favicon de GG.deals en las fichas de la tienda, así que ese sitio ve una petición de imagen corriente al dibujarse los botones —nada sobre qué juego estás viendo— (el logo de PCGamingWiki es SVG en línea y no pide nada). No se envía nada a terceros ni al autor. Aparte de la privacidad, recuerda el aviso de arriba: automatizar viola la política anti-spam de Indiegala y los clics sintéticos son detectables por el sitio.
 
 ## Support / Apoyar
 

@@ -1,12 +1,14 @@
 // ==UserScript==
-// @name         Indiegala Giveaway Bulk Tools (Extra Odds bulk join + Single Ticket queue)
+// @name         Indiegala Bulk Tools (giveaway ticket queue + store links)
 // @namespace    http://tampermonkey.net/
-// @version      1.7.9
-// @description  Unified ticket queue for Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another. Add, remove and reorder mid-run; tickets you cannot afford wait in the queue instead of killing it. Humanised pacing on a Web Worker timer, recoverable stop, GalaSilver widget, prize checking in your library, wheel-of-fortune alerts, remembered filters and per-card hiding. USE AT YOUR OWN RISK: automating purchases violates Indiegala's anti-spam policy and may cause a permanent ban.
+// @version      1.8.0
+// @description  Unified ticket queue for Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another; add, remove and reorder mid-run, and tickets you cannot afford wait instead of killing the run. GalaSilver widget, prize checking, wheel alerts, remembered filters. On store product pages it adds GG.deals and PCGamingWiki title-search buttons. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
 // @match        https://www.indiegala.com/library
 // @match        https://www.indiegala.com/library/*
+// @match        https://www.indiegala.com/store/game/*
+// @match        https://www.indiegala.com/store/product/*
 // @author       g31w0fw0rld
 // @license      MIT
 // @downloadURL  https://github.com/g31w0fw0rld/indiegala-bulk-join/raw/main/indiegala-bulk-join.user.js
@@ -48,9 +50,13 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.7.9';
+    const SCRIPT_VERSION = '1.8.0';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
-    console.warn(
+    // La advertencia de automatizacion solo aplica al modulo de giveaways. En la
+    // tienda este script no automatiza nada —pone dos enlaces— y avisar ahi de un
+    // riesgo de ban seria mentir. isStoreProduct() esta declarada mas abajo con
+    // `function`, asi que el hoisting la deja usable aqui.
+    if (!isStoreProduct()) console.warn(
         '[IG-BulkTools] ⚠️ ADVERTENCIA: este script automatiza acciones en Indiegala (bulk join + cola).\n' +
         'La politica de Indiegala prohibe cualquier automatizacion (incluso desde la misma cuenta) y\n' +
         'puede resultar en BAN PERMANENTE. Politica: https://docs.indiegala.com/giveaways_auctions_trades/spam.html\n' +
@@ -200,7 +206,10 @@
             wheelAvailableAlert: '🎡 ¡La Wheel of Fortune cambió de estado (puede estar disponible para girar)! Atiéndela ahora para que no se te pase.',
             wheelSpinWon: '🎡 Ruleta: ganaste {prize}',
             wheelPrizeAfterReload: '🎡 Ruleta: ganaste {prize} · saldo actualizado',
-            wheelReloadNotice: '🎡 Ganaste {prize} · al cerrar se recarga para actualizar tu saldo'
+            wheelReloadNotice: '🎡 Ganaste {prize} · al cerrar se recarga para actualizar tu saldo',
+            // Tienda (fichas de /store/game y /store/product)
+            storeGgTip: 'Busca el título en el catálogo de GG.deals, sin filtro de tienda ni de DRM. Al buscar por nombre, puede no dar con el juego exacto.',
+            storePcgwTip: 'Busca el título en PCGamingWiki (compatibilidad y arreglos). Al buscar por nombre, puede no dar con el artículo exacto.'
         },
         en: {
             // Bulk join (Extra Odds)
@@ -311,7 +320,10 @@
             wheelAvailableAlert: '🎡 The Wheel of Fortune changed state (it may be available to spin)! Go attend it now so you don\'t miss it.',
             wheelSpinWon: '🎡 Wheel: you won {prize}',
             wheelPrizeAfterReload: '🎡 Wheel: you won {prize} · balance updated',
-            wheelReloadNotice: '🎡 You won {prize} · closing it reloads the page to refresh your balance'
+            wheelReloadNotice: '🎡 You won {prize} · closing it reloads the page to refresh your balance',
+            // Store (product pages under /store/game and /store/product)
+            storeGgTip: 'Searches the title in the GG.deals catalogue, with no store or DRM filter. Being a title search, it may not hit the exact game.',
+            storePcgwTip: 'Searches the title on PCGamingWiki (compatibility and fixes). Being a title search, it may not hit the exact article.'
         }
     };
     const T = i18n[LANG] || i18n.en;
@@ -328,7 +340,7 @@
             aboutTitle: '¿Qué hace este script?',
             aboutBody: [
                 '⚠️ USO BAJO TU PROPIO RIESGO: automatizar compras viola la política anti-spam de Indiegala y puede causar ban permanente.',
-                'Este script añade a Indiegala Giveaways una cola unificada de compra de boletos y varias utilidades alrededor.',
+                'Este script añade a Indiegala Giveaways una cola unificada de compra de boletos y varias utilidades alrededor, y a las fichas de la tienda dos enlaces de consulta.',
                 '▸ Cola de boletos',
                 '• Mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo giveaway) y los compra uno tras otro.',
                 '• Añadir, quitar y reordenar mientras corre: el orden de la lista es el orden de ejecución, y los ▲▼ surten efecto a mitad de corrida.',
@@ -348,6 +360,9 @@
                 '▸ Opciones del listado',
                 '• Recordar filtros de búsqueda (orden, nivel, texto y página), ocultar los giveaways en los que ya tienes boleto y elegir el idioma del script (es/en/Auto).',
                 '• El botón ✕ de cada tarjeta oculta ese giveaway para siempre (solo en tu navegador), en la esquina opuesta al ＋ o al badge ⚠×N. "Mostrar ocultos por mí" los devuelve atenuados para sacarlos de la lista con ↺, y "Limpiar ocultos (N)" la vacía de golpe.',
+                '▸ Fichas de la tienda',
+                '• En las páginas de producto (juegos, DLC y packs) añade dos botones bajo "Add to Cart": GG.deals busca el título en su catálogo, sin filtro de tienda ni de DRM, y PCGamingWiki lo busca para compatibilidad y arreglos. Los dos buscan por nombre, así que pueden no acertar; cada uno lo dice en su tooltip.',
+                '• Ahí no corre nada más del script: ni cola, ni automatización, ni advertencias. Solo los dos enlaces.',
                 'Todo se procesa en tu navegador; no se envían datos a terceros.'
             ]
         },
@@ -359,7 +374,7 @@
             aboutTitle: 'What does this script do?',
             aboutBody: [
                 '⚠️ USE AT YOUR OWN RISK: automating purchases violates Indiegala\'s anti-spam policy and may cause a permanent ban.',
-                'This script adds a unified ticket-purchase queue to Indiegala Giveaways, plus a few utilities around it.',
+                'This script adds a unified ticket-purchase queue to Indiegala Giveaways, plus a few utilities around it, and two lookup links on store product pages.',
                 '▸ Ticket queue',
                 '• Mixes "Single Ticket" (1 ticket) and "Extra Odds" (N tickets of the same giveaway) and buys them one after another.',
                 '• Add, remove and reorder while it runs: the order of the list is the execution order, and ▲▼ take effect mid-run.',
@@ -379,6 +394,9 @@
                 '▸ Listing options',
                 '• Remember search filters (sort, level, text and page), hide giveaways you already entered and choose the script language (es/en/Auto).',
                 '• The ✕ button on each card hides that giveaway for good (in your browser only), in the corner opposite the ＋ or the ⚠×N badge. "Show the ones I hid" brings them back dimmed so you can take them off the list with ↺, and "Clear hidden (N)" empties it in one go.',
+                '▸ Store product pages',
+                '• On product pages (games, DLC and packs) it adds two buttons under "Add to Cart": GG.deals searches the title in its catalogue, with no store or DRM filter, and PCGamingWiki searches it for compatibility and fixes. Both are title searches, so they can miss; each says so in its tooltip.',
+                '• Nothing else from the script runs there: no queue, no automation, no warnings. Just the two links.',
                 'Everything runs in your browser; no data is sent to third parties.'
             ]
         }
@@ -976,6 +994,11 @@
     // de giveaways: solo la secuencia de auto-revision de premios.
     function isLibrary() {
         return /^\/library(\/|$)/.test(location.pathname);
+    }
+    // Ficha de producto de la tienda. Juegos, DLC y packs comparten plantilla y
+    // cuelgan de estas dos rutas. Aqui NO corre nada del modulo de giveaways.
+    function isStoreProduct() {
+        return /^\/store\/(game|product)\//.test(location.pathname);
     }
 
     // =============================================
@@ -4099,11 +4122,269 @@
         observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     }
 
-    // Punto de entrada. En /library NO se monta la cola ni el observador de
-    // giveaways: solo, si venimos del boton "Revisar premios" (flag en el hash),
-    // se dispara la secuencia de auto-revision. En el resto de paginas (/giveaways*)
-    // arranca el flujo normal (cola, badges, widget de saldo).
+    // =============================================
+    // MODULO: TIENDA (/store/game/*, /store/product/*)
+    // =============================================
+    // Nada de esto tiene que ver con la cola ni con la automatizacion: en una
+    // ficha de producto el script solo añade dos enlaces (GG.deals y
+    // PCGamingWiki) bajo el boton de compra. Por eso boot() sale por aqui antes
+    // de montar el observador, los estilos y el resto del modulo de giveaways.
+    //
+    // Juegos, DLC y packs comparten plantilla, asi que hay un solo camino de
+    // codigo para los tres. Todo lo que vende IndieGala es PC, de modo que no
+    // hace falta filtro por plataforma.
+    const STORE_PRICE_BOX_SELECTOR = '.store-product-price-box';
+    const STORE_ASIDE_SELECTOR = '.store-product-contents-aside-inner';
+    // Anclas en orden de preferencia: la caja de precio (debajo de "Add to
+    // Cart") y, si la ficha no la tiene (producto retirado), la columna entera.
+    const STORE_ANCHOR_SELECTORS = [STORE_PRICE_BOX_SELECTOR, STORE_ASIDE_SELECTOR];
+
+    // El nombre limpio del producto viene en el data-* del propio boton de
+    // carrito, y es mejor fuente que el <h1>: el <h1> arrastra el sufijo de DRM
+    // ("DOOM VFR <em>Steam Key</em>") y a veces la tienda de destino entre
+    // parentesis ("Sid Meier's Civilization VI (Epic)"), que en una busqueda por
+    // titulo solo estorban. Hay UN solo elemento con este atributo por ficha.
+    const STORE_PROD_TITLE_SELECTOR = '[data-prod-title]';
+    const STORE_H1_SELECTOR = '.store-product-header h1, h1';
+    // Cola que IndieGala añade en <title> y og:title:
+    // "<Nombre> <DRM> | Buy Cheap <Nombre> PC Game - Indiegala". El grupo del
+    // medio es el nombre ya sin el sufijo de DRM, y es el ultimo recurso.
+    const STORE_DOC_TITLE_REGEX = /\|\s*Buy Cheap\s+(.+?)\s+PC Game\s*-\s*Indiegala\s*$/i;
+
+    const STORE_TRADEMARK_REGEX = /[™®©]/g;
+    // Diacriticos combinados, para quitarlos tras normalizar a NFD.
+    const STORE_DIACRITICS_REGEX = /[\u0300-\u036f]/g;
+
+    // Busqueda en el catalogo de GG.deals, igual que hace el script de Humble
+    // Bundle: /games/ cae en la ficha del juego (con su historico y todas sus
+    // ofertas), mientras que /deals/ es la lista de ofertas del momento.
+    //
+    // Y a diferencia de Steam, GOG, Epic o Microsoft Store, aqui NO se filtra por
+    // DRM. Aquellas son tiendas de un solo DRM, asi que su script puede fijar el
+    // bitmask (1 Steam, 8 GOG, 16 sin DRM, 1024 Epic…) y acertar siempre;
+    // IndieGala revende llaves de varias tiendas y ademas vende juegos sin DRM,
+    // asi que no hay un filtro correcto para toda la tienda. Ademas /games/
+    // ignora el parametro drm: solo lo acepta /deals/.
+    const GGDEALS_SEARCH_URL = 'https://gg.deals/games/?title=';
+
+    const PCGW_SEARCH_URL = 'https://www.pcgamingwiki.com/w/index.php';
+
+    // Icono de GG.deals: favicon remoto (su CDN permite el hotlink). Si el CSP de
+    // IndieGala lo bloqueara, el onerror lo quita y queda solo la etiqueta.
+    const GGDEALS_ICON_URL = 'https://gg.deals/favicon.ico';
+    // Icono de PCGamingWiki: SVG inline. Su favicon.ico responde 403 al hotlink
+    // (Cloudflare) desde otros dominios, asi que como <img> remoto no se ve; el
+    // SVG inline es markup y siempre pinta, sin depender del CSP ni del hotlink.
+    const PCGW_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 827 1158" width="13" height="18" aria-hidden="true" style="vertical-align:middle;flex:0 0 auto"><path d="M0 166.2 448.9-1.1 827.4 56.1l0 1023.9 0.1 28.9L452.1 1158.9 0 1008.4z" fill="#365798"/><path d="M25.3 985.5 24.1 190.5 413 46.8 412 1107.6zM478.1 1108.6 478.3 52.3 788.1 94.3l0 975.8z" fill="#a5b6d9"/><path d="M215.5 737 41.5 727 40.3 420.5 215.9 404.1zm16.7-334.5 156.1-19.4-1.2 359.8-155.2-4.8zM39.3 399.9l0-194.4 176-57.4 1.2 232.1zm350.8-317.2 0.9 274.5-158.7 20.4 0-238zm-253 909.7 0-235.1 141.7 9.3 0 268.4zm247 80.8-17.3-6.4c3.8-22.5-18.9-31.9-19.1-5.7l-18.7-5.5c-0.9-22.1-13.9-31.7-21.2-6.8l-9.7-3-0.6-277.7 12.3 0.9c-4.3 27.5 23.5 28.2 20.3 1.7L350.4 772c-4.4 28.6 23.2 28.9 20.4 1.3l12.7 0.8zM42.8 751.1l82.2 5.9-0.5 108-81.9-11.2zm83.1 129.3-0.9 110.4-82.7-20.2 0-102.4zM494.3 70l278.6 36.6 0 950-278.3 35.1z" fill="#365798"/><path d="m279 507.5c-0.1-5.1 0-10 3.2-14.2 6 0.2 4.9 9.7 5 14.3 10.3 5.1 4.9-10.8 10.2-15.3 7.6-0.8-0.6 16 6.9 15.8 4.9-0.1 3.9-2.4 3.8-6.7-0.1-3.9 0.4-7.8 3.8-10.3 8.2 3.1 0.8 18.2 11.2 15.8 0-6.4-1-14.2 5.8-17.6 2.6 5.2-0.1 14.8 5.4 16.1 7.4 1.7 8.4 3.6 10.2 10.5 0.8 3.1-0.4 4.6 2.8 6.4 3.5 2 7.6 1.4 7.7 6.1 0.1 6.4-2.7 5.5-7.6 5.5-1.8 0-2.4 3.4-2.5 4.7-0.4 4.7 0.4 5.7 5 7 5.9 1.7 4.9 3.3 4.9 8.7 0 2.7 0.5 1.2-3.1 1.9-5.7 1.1-7 0.3-6.7 6.8 0.4 7.8 13.4 1.4 9.7 12.6-1.6 4.8-9.5 1.1-9.5 5.3 0 5.3-1.1 7.7 5.4 8.2 6.4 0.5 6 9.1 0.4 11-3.4 1.2-4.6-0.1-5.8 4-1.2 4.1-1.1 8.4-2.6 12.5-6.1 4.5-11.6-1.7-11.6 8.4 0 2.7-0.6 4.7-1.1 7.3-0.9 5-2.2 0.7-5.8 1.8-1-1.2 0-7.9 0-9.5 0-4.7-1.6-5.8-7-5.4-0.3 5.8-0.2 12-4.9 16.2-2.9-1.9-4-4.8-4.2-8.1-0.3-6.5 0.2-6.7-6.5-8.3-1.2 2.9-2 11.4-1.5 14.5-5.2 2.6-6-5.4-6-8.6 0-2.7 1.1-5.7-2.3-6.7-3.4-0.9-4.6 0.8-4.7 3.9-0.2 6.1-0.5 8.8-5.3 12.2-1.9-5.4-0.3-14.7-6.6-16.4-7-1.8-7.9-6.9-8-13.6-0.1-7.3-8.9-0.3-8.9-8.2 0-0.8-0.6-4.9 0-5.5 2.9-2.1 5.8 1.2 8.5 0.1 1.3-3.6 1.8-9-2.1-9.9-4-0.9-7.8-1.4-6.9-6 1.1-5.7 0.1-5.4 6.3-5.8 4.7-0.3 3-5.2 3.1-8.4-6.2-2.9-8.8 0.8-8.8-7.4 0-5.6-0.4-5.1 5.2-5.1 4.8 0 3.4-1.7 3.4-6.3 0-5.1-9.2-0.6-9.6-7.6-0.2-3 1-5.6 3.9-6.7 5.1-2 5.7-2.3 5.9-7.8 0.3-8 5.6-8.9 12-12.1l0 0 0 0zM88.3 368.3l24.3-92.2-15.7 7.5 21.6-79 25.5-7.3-19.1 53.1 19.2-10.3-55.7 128.3 0 0z" fill="#a5b6d9"/><path d="m278.8 317.9c1.2-3.2 2.5-6.5 3.8-9.9 13.8 5.9 26.4 10.2 40.6 1.9 13.7-8 22.8-24.3 28-38.8 10.2-28.4 10.2-66.8-8.3-91.8-22.5-30.5-54.5-14.5-69.8 13.9-4.7 8.8-11.2 31.3-12.1 45.3-0.5 6.9-0.2 14.1 0.8 21.3 1 8.1 5.2 16.5 4.2 24.7-0.3 2.5-1.8 4.1-4.6 4.6-16.7-28-7.6-72.9 4.9-100.6 12.5-27.6 47.9-55.5 75.9-29 25.7 24.2 28.2 68.1 21.3 100.3-6.2 28.8-26 71.4-61.9 68.2-6.4-0.6-19.1-3.8-22.7-10l0 0zM299.3 272c-3.2-11.6 11.5-19.5 14.8-28.4 1.9-5.2-0.1-9.6-2.2-14-4.9-2.6-9-1.1-10.8 4-3.2 8.9-6.5 14.9-12.6 22.1-3.3-13.7-1.4-29.1 6.6-40.9 4.3-6.3 12.9-9.4 19.4-6.9 20.5 7.8 14.2 42.7 5.3 56.4-4.7 7.3-12.7 7.6-20.5 7.6L299.3 272zm3.4-25.8c0.5 0.7 0.5 1.4 0.2 2-9.4 21.3-18.7 42.6-28.2 64-0.9-0.4-1.4-0.4-1.7-0.7-3.3-3.9-5.6-8.5-7.8-13.1-0.9-1.8 0.1-3.6 1.2-5.1l32.8-43.7c0.9-1.3 2-2.6 3.4-3.4l0 0z" fill="#a5b6d8"/><path d="m188.7 921.7c-6.1 11.9-4.4 25.1-6 38-9.7-2.4-16.7-21.7-18.6-30 1.7-9.9 6.9-17.2 12.9-24.9 2.8-3.6 3.7-7.2 1.9-11.4-0.7-1.6-0.6-3.6-2-4.9-8.7 1.5-13.9 8.2-19.9 14-6.7-7-5.2-33.4 0.2-41.1 8.4-1.5 15.8 1 22.6 5.8 5.3-5.2 5.6-10.3 0.9-15.7-3.6-4.1-14.7-8.9-16.7-13.1-1.6-6.3 10.2-27.5 17.3-27.2 7.8 11.5 12.4 24.5 15 38.1 2.7 1.1 5.1 2.1 8.2 1.5 1.6-15.5-1.9-30.3-6.8-44.8 0.5-0.5 0.8-0.9 1-0.9 8.6 0.6 16.8 2.3 23.4 8.6 14.9 14.2-11.5 41.7 0.4 58.4 10.7-10.3 10.5-23.1 18.6-34 8 10.3 15 31 13.7 44.1-6.9 8.3-12.4 13-28.9 14.2 0.5 3.7-1.8 7.2-0.8 11.5 8.8 9.4 18.5 7.9 30.1 7.2 1.6 8.2-6.7 33.6-12.9 39.7-12.6-5.7-19.1-17.9-26.1-29.1-2.5 1.9-4.6 3.7-6.4 6.1 1.7 12.9 18 29.3 15.9 40.7-5.5 2.6-11.4 4.3-17.7 3.4-6.2-0.9-8.7-4.3-10.2-10.9-3.3-14.7 3.2-32.8-9.2-43.3zm118.5 22.1 0-63.8 67.8 10.9 0 67.4zM307.1 804.2 375 811.3 375 878.1 307.1 868.2zm67.7 165.5 0 66.8-67.6-18.6 0-63.6zm-320.5-31.7 0-28.9 13.7 2 16.5-16.6 0.7 67.6-16.3-20.9z" fill="#a5b6d9"/><path d="m89.1 914.4c1.4-0.6 2.3-0.5 3.4-0.2 2.8 6.5 3.9 13.4 3.6 20.5-0.1 2.7-1.1 5.1-1.7 7.6-0.5 1.9-1.8 3-3.4 3.9-1.3-1.3-0.9-2.5-0.6-3.8 0.8-3.7 1.6-7.3 1.7-11.1 0.2-5.8-1.6-11.2-2.9-16.9l0 0 0 0zm7 42.4c-0.3-3.3 0.9-6.2 1.6-9.1 1-4.4 2.5-8.8 3.1-13.2 0.8-5.6-1-11-2.4-16.4-0.7-2.5-1.5-5-2.2-7.5-0.4-1.6-0.7-3.1 0.2-4.5 1.3-0.1 1.8 0.6 2.1 1.3 2.1 4.3 3.6 8.6 4.5 13.3 1 5.5 0.5 10.9 0.9 16.3 0.3 3.5-0.8 6.9-1.3 10.2-0.6 3.8-2.6 7.4-6.6 9.6l0 0zm7.6 10.4c-1.9-3.7-1.4-6.5-0.1-9.8 3.1-8.1 5.9-16.4 5.3-25.2-0.5-7.7-1.8-15.2-4.6-22.4-1.2-3-2.3-6.1-3.3-9 0.8-1.2 1.7-2 3.4-1.6 1.8 4.1 3.9 8.3 5.1 12.8 5 19 5 37.4-5.7 55.3l0 0z" fill="#a5b6d9"/><path d="m598.7 1047.1-70.3 8.4-0.2-378.8 70.5-3.8zM688.5 533.1c-11 50.3-65.8 45.6-78.3 2.8l-92.4 3.1-0.2-67.9 89.4-3.3c22.8-54 64.5-46.2 81.8 0.2l66.2 0.4 1.6 61.8zm-172.4-237.1 0-24 241.7 7.5 0.1 19.4z" fill="#a5b6d9"/><path d="m52.3 827.5 62.6 9.7-19.2-43.4-8.2 15-13.4-29.3-21.8 48.1zM116.4 788c0 4.4-3.5 7.9-7.9 7.9-4.4 0-7.9-3.5-7.9-7.9 0-4.4 3.5-7.9 7.9-7.9 4.4 0 7.9 3.5 7.9 7.9z" fill="#a5b6d9"/><ellipse cx="649.4" cy="501.8" rx="31" ry="51.8" fill="#365798"/><path d="m177.7 627.1c-1.8 3-1.6 6.7 0.4 9.3l-26.3 40 6.6-0.1 25-36.7c3.2 0.6 6.6-0.9 8.5-3.8 2.4-3.9 1.2-9-2.7-11.4-3.9-2.4-9-1.2-11.5 2.7zm-110.8 29.7-9.7 12.9 4.6 4.3 7.9-11 7.1 0.3c0.4 0.7 0.9 1.4 1.5 2 3.3 3.3 8.6 3.3 11.8 0 3.3-3.3 3.3-8.6 0-11.8-3.3-3.3-8.6-3.3-11.8 0-1 1-1.7 2.3-2.1 3.6zm20.1-68.7c-4.4 0-8 3.6-8 8 0 4.4 3.6 8 8 8 3.7 0 6.8-2.5 7.7-6l44.5 1.3 17.4 21.5c-0.2 0.8-0.4 1.6-0.4 2.4 0 4.6 3.8 8.4 8.4 8.4 4.6 0 8.4-3.8 8.4-8.4 0-4.6-3.8-8.4-8.4-8.4-1.5 0-2.9 0.4-4.1 1.1l-18.9-22.9-48-1.3c-1.4-2.2-3.9-3.7-6.8-3.7zm13.5 27c-4.6 0.1-8.3 4-8.1 8.6 0.1 4.6 4 8.3 8.6 8.1 3.3-0.1 6-2.1 7.3-4.9l22.2-0.5c1.4 2.9 4.4 4.8 7.8 4.7 4.6-0.1 8.3-4 8.1-8.6-0.1-4.6-4-8.3-8.6-8.1-3.6 0.1-6.6 2.5-7.7 5.7l-21.5 0.5c-1.2-3.3-4.4-5.7-8.1-5.6zm-26 16.7c0 4.4-3.6 8-8 8-4.4 0-8-3.6-8-8 0-4.4 3.6-8 8-8 4.4 0 8 3.6 8 8zM87.6 476.5c-3.5 0.2-6.4 2.5-7.5 5.6l-22.6 1 0.3 6.2 22.6-1c1.4 3 4.4 5 7.9 4.9 4.6-0.2 8.1-4.1 7.9-8.7-0.2-4.6-4.1-8.2-8.7-8zm56.3 20c-4.6 0.1-8.3 4-8.1 8.6 0.1 4.6 4 8.3 8.6 8.1 3.3-0.1 6-2.1 7.3-4.9l25.3-0.7c1.4 2.9 4.4 4.8 7.8 4.7 4.6-0.1 8.3-4 8.1-8.6-0.1-4.6-4-8.3-8.6-8.1-3.6 0.1-6.6 2.5-7.7 5.7l-24.6 0.7c-1.2-3.3-4.4-5.7-8.1-5.6zm-44.4-30.4-4.1 4.7 19.8 17.1 80.9-3-0.5-6.2-78.3 2.8zm-41.6 51.7-0.2-6 68.2-4 71.4 103.9-5.3 3.3-70.1-101.1zm132.6 25.4c2.3-2.6 2.6-6.3 1.1-9.3l6.6-9.5 0.4-9-11.7 14.4c-3.1-1.1-6.7-0.2-9 2.4-3 3.5-2.7 8.7 0.8 11.7 3.5 3 8.7 2.7 11.8-0.8zm-32.3 0.4c2 2.9 5.5 4.1 8.7 3.3l30.7 44.3-0.1-9.8-25.5-38c1.8-2.8 1.8-6.4-0.2-9.3-2.6-3.8-7.8-4.7-11.6-2-3.8 2.6-4.7 7.8-2.1 11.6zm-34.8-9.6c-3.5 0.2-6.4 2.5-7.5 5.6l-57.2 2.9 0.3 6.2 57.2-2.9c1.4 3 4.4 5 7.9 4.9 4.6-0.2 8.1-4.1 7.9-8.7-0.2-4.6-4.1-8.2-8.7-8zm17.5 33-81.3 2 0.2 6.3 78.7-2 17.5 22.3c-0.2 0.8-0.4 1.6-0.4 2.4 0 4.6 3.8 8.4 8.4 8.4 4.6 0 8.4-3.8 8.4-8.4 0-4.6-3.8-8.4-8.4-8.4-1.5 0-2.9 0.4-4.1 1.1zM179.2 672.5c1.2 2.6 5 0.2 5.7 3.6-1 4.1-8.9 0.5-11.6 0.9-1.4-4.3 8.4-15.3 10.9-18.8 2.8-1.4 9.4 0 12.6 0 0.3 2.8 0.5 5.3-1.5 7.8-3.4 0.1-6.7-1.4-10.1-1.7-2 2.7-4 5.5-6 8.2zM67.3 604.9l-8.1 0 0-6.7c6.2 0 9.7-1.6 13.2 3.9 6.6 10.3 12.8 20.9 19.1 31.4 3.1 5.2 6.3 10.4 9.5 15.5 4.6 7.4 5.8 8 14.6 8.6 6.3 0.4 12.7 0.4 19.1 0.4 6.6 0 6.4-5.5 12.7-4.9 5.4 5.1 5.4 11.7 0 16.8-6 0.4-5.3-5.8-9.8-5.8l-19.2 0c-9.5 0-12.4 2.1-17.3-5.6-11.2-17.9-22.4-35.7-33.6-53.6z" fill="#a5b6d9"/><path d="m339.3 257.1c0 3.2-2.6 5.9-5.9 5.9-3.2 0-5.9-2.6-5.9-5.9 0-3.2 2.6-5.9 5.9-5.9 3.2 0 5.9 2.6 5.9 5.9zm14.4-13.7c0 3.2-2.6 5.9-5.9 5.9-3.2 0-5.9-2.6-5.9-5.9 0-3.2 2.6-5.9 5.9-5.9 3.2 0 5.9 2.6 5.9 5.9zm23 0c0 3.2-2.6 5.9-5.9 5.9-3.2 0-5.9-2.6-5.9-5.9 0-3.2 2.6-5.9 5.9-5.9 3.2 0 5.9 2.6 5.9 5.9zm-12.9 46.6c0 3.2-2.6 5.9-5.9 5.9-3.2 0-5.9-2.6-5.9-5.9 0-3.2 2.6-5.9 5.9-5.9 3.2 0 5.9 2.6 5.9 5.9zm14.7-11.5c0 3.2-2.6 5.9-5.9 5.9-3.2 0-5.9-2.6-5.9-5.9 0-3.2 2.6-5.9 5.9-5.9 3.2 0 5.9 2.6 5.9 5.9zm7.4-18.3c0 3.2-2.6 5.9-5.9 5.9-3.2 0-5.9-2.6-5.9-5.9 0-3.2 2.6-5.9 5.9-5.9 3.2 0 5.9 2.6 5.9 5.9z" transform="matrix(0.59478444,0,0,0.93466127,95.788817,-7.8295466)" fill="#365798"/></svg>';
+
+    const STORE_LINKS_ID = 'ig-store-links';
+    const STORE_LINK_CLASS = 'ig-store-link';
+    const STORE_ICON_CLASS = 'ig-store-ico';
+    const STORE_STYLES_ID = 'ig-store-styles';
+
+    // Reintentos por si la caja de precio aun no esta en el DOM. Las fichas de
+    // IndieGala llegan renderizadas del servidor y no hay navegacion de SPA
+    // entre productos, asi que lo normal es acertar a la primera; esto solo
+    // cubre el caso de que algun script de la tienda rehaga la columna.
+    const STORE_RETRY_INTERVAL_MS = 250;
+    const STORE_RETRY_MAX = 40;   // ~10 s
+
+    /**
+     * Nombre del producto para las busquedas externas. Prueba el data-* del
+     * boton de carrito (el mas limpio), luego el <h1> sin su <em> de DRM y, por
+     * ultimo, el <title> de la pagina, del que se extrae el nombre que IndieGala
+     * repite ya sin sufijo.
+     * @returns {string} Titulo limpio, o cadena vacia si no se pudo leer ninguno.
+     */
+    function getStoreProductTitle() {
+        const fromData = document.querySelector(STORE_PROD_TITLE_SELECTOR)?.getAttribute('data-prod-title');
+
+        let fromH1 = '';
+        const h1 = document.querySelector(STORE_H1_SELECTOR);
+        if (h1) {
+            // Se clona para no tocar la pagina al quitarle el <em> del DRM.
+            const copy = h1.cloneNode(true);
+            copy.querySelectorAll('em').forEach((em) => em.remove());
+            fromH1 = copy.textContent || '';
+        }
+
+        const fromDoc = (document.title.match(STORE_DOC_TITLE_REGEX) || [])[1] || '';
+
+        return (fromData || fromH1 || fromDoc || '')
+            .replace(STORE_TRADEMARK_REGEX, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    /**
+     * Normaliza el titulo para la busqueda de GG.deals quitando los acentos:
+     * GG.deals translitera en su indice, asi que "Pokémon" se busca como "Pokemon".
+     * PCGamingWiki en cambio los conserva en sus articulos, y alli van tal cual.
+     * @param {string} title - Titulo limpio del producto.
+     * @returns {string} Titulo sin diacriticos.
+     */
+    function normalizeForGgDeals(title) {
+        return title.normalize('NFD').replace(STORE_DIACRITICS_REGEX, '');
+    }
+
+    /**
+     * Estilos de la fila de enlaces: dos botones a partes iguales dentro de la
+     * caja de precio, con la misma pildora redondeada que usa la tienda para
+     * "Add to Cart". El color es el de cada marca, que es lo que los separa del
+     * rojo de comprar y evita que parezcan otro boton de la tienda.
+     */
+    function injectStoreStyles() {
+        if (document.getElementById(STORE_STYLES_ID)) return;
+        const style = document.createElement('style');
+        style.id = STORE_STYLES_ID;
+        style.textContent = `
+            #${STORE_LINKS_ID} {
+                flex: 1 0 100%; align-self: stretch; box-sizing: border-box;
+                display: flex; gap: 8px; padding: 0 5px 5px;
+            }
+            /* Fuera de la caja de precio (ficha sin ella) la fila se alinea con el
+               margen interior de la columna, que es mas ancho. */
+            #${STORE_LINKS_ID}.ig-store-in-aside { padding: 0 15px 15px; }
+            #${STORE_LINKS_ID} .${STORE_LINK_CLASS} {
+                flex: 1 1 0; min-width: 0; box-sizing: border-box;
+                display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+                padding: 10px 12px; border-radius: 25px;
+                font-size: 13px; font-weight: 700; line-height: 1.2;
+                color: #fff; text-decoration: none; white-space: nowrap; overflow: hidden;
+                cursor: pointer; transition: filter .15s ease;
+            }
+            #${STORE_LINKS_ID} .${STORE_LINK_CLASS}:hover { filter: brightness(1.12); color: #fff; text-decoration: none; }
+            #${STORE_LINKS_ID} .ig-store-gg   { background: #12a150; }
+            #${STORE_LINKS_ID} .ig-store-pcgw { background: #365798; }
+            #${STORE_LINKS_ID} .${STORE_ICON_CLASS} { display: inline-flex; align-items: center; flex: 0 0 auto; }
+            #${STORE_LINKS_ID} img.${STORE_ICON_CLASS} { width: 14px; height: 14px; object-fit: contain; }
+            /* El logo de PCGamingWiki es mas alto que ancho (viewBox 827x1158): se
+               fija el alto y se deja el ancho automatico para no deformarlo. */
+            #${STORE_LINKS_ID} .${STORE_ICON_CLASS} svg { height: 15px; width: auto; display: block; }
+        `;
+        (document.head || document.documentElement).appendChild(style);
+    }
+
+    /**
+     * Crea un enlace con el icono a la izquierda de la etiqueta. Es un <a> real,
+     * asi que funcionan el clic central y "copiar direccion del enlace".
+     * @param {{ cls: string, label: string, url: string, iconSvg?: string, iconUrl?: string, tooltip: string }} opts
+     * @returns {HTMLAnchorElement} El enlace listo para insertar.
+     */
+    function createStoreLinkButton({ cls, label, url, iconSvg, iconUrl, tooltip }) {
+        const a = document.createElement('a');
+        a.className = `${STORE_LINK_CLASS} ${cls}`;
+        a.href = url;
+        a.target = '_blank';
+        a.rel = 'nofollow noopener external';
+        a.title = tooltip;
+
+        if (iconSvg) {
+            const box = document.createElement('span');
+            box.className = STORE_ICON_CLASS;
+            box.innerHTML = iconSvg;
+            a.appendChild(box);
+        } else if (iconUrl) {
+            const img = document.createElement('img');
+            img.className = STORE_ICON_CLASS;
+            img.src = iconUrl;
+            img.alt = '';
+            img.addEventListener('error', () => img.remove());  // sin icono si el CSP lo bloquea
+            a.appendChild(img);
+        }
+        a.appendChild(document.createTextNode(label));
+        return a;
+    }
+
+    /**
+     * Fila con los dos enlaces, ya resuelto el titulo de la ficha.
+     * @param {string} title - Titulo limpio del producto.
+     * @returns {HTMLDivElement} El contenedor con los dos enlaces.
+     */
+    function createStoreLinks(title) {
+        const box = document.createElement('div');
+        box.id = STORE_LINKS_ID;
+
+        box.appendChild(createStoreLinkButton({
+            cls: 'ig-store-gg',
+            label: 'GG.deals',
+            url: GGDEALS_SEARCH_URL + encodeURIComponent(normalizeForGgDeals(title)),
+            iconUrl: GGDEALS_ICON_URL,
+            tooltip: T.storeGgTip
+        }));
+        box.appendChild(createStoreLinkButton({
+            cls: 'ig-store-pcgw',
+            label: 'PCGamingWiki',
+            url: `${PCGW_SEARCH_URL}?${new URLSearchParams({ search: title })}`,
+            iconSvg: PCGW_ICON_SVG,
+            tooltip: T.storePcgwTip
+        }));
+        return box;
+    }
+
+    /**
+     * Inserta la fila de enlaces. Es idempotente y devuelve true solo cuando los
+     * botones quedaron puestos (o ya estaban): el false es lo que mantiene vivo
+     * el reintento mientras falte el ancla o el titulo.
+     * @returns {boolean} true si ya no hay nada mas que hacer.
+     */
+    function insertStoreLinks() {
+        if (document.getElementById(STORE_LINKS_ID)) return true;
+
+        const title = getStoreProductTitle();
+        if (!title) return false;
+
+        let anchor = null;
+        for (const selector of STORE_ANCHOR_SELECTORS) {
+            anchor = document.querySelector(selector);
+            if (anchor) break;
+        }
+        if (!anchor) return false;
+
+        injectStoreStyles();
+        const links = createStoreLinks(title);
+        if (!anchor.matches(STORE_PRICE_BOX_SELECTOR)) links.classList.add('ig-store-in-aside');
+        anchor.appendChild(links);
+        return true;
+    }
+
+    /**
+     * Arranca el modulo de tienda: intenta insertar y, si algo no esta listo,
+     * reintenta hasta ~10 s.
+     */
+    function initStoreLinks() {
+        let tries = 0;
+        const timer = setInterval(() => {
+            tries++;
+            let done = false;
+            try {
+                done = insertStoreLinks();
+            } catch (e) {
+                console.error('[IG-BulkTools] store links:', e);
+                done = true;
+            }
+            if (done || tries >= STORE_RETRY_MAX) clearInterval(timer);
+        }, STORE_RETRY_INTERVAL_MS);
+
+        try {
+            insertStoreLinks();
+        } catch (e) {
+            console.error('[IG-BulkTools] store links:', e);
+        }
+    }
+
+    // Punto de entrada. Tres modos segun la ruta:
+    //   /store/game|product/*  -> solo los dos enlaces externos. Sale antes de
+    //     injectStyles() a proposito: ese CSS es todo del modulo de giveaways y
+    //     en una ficha de producto no pinta nada.
+    //   /library               -> solo, si venimos del boton "Revisar premios"
+    //     (flag en el hash), la secuencia de auto-revision.
+    //   /giveaways*            -> el flujo normal (cola, badges, widget de saldo).
     function boot() {
+        if (isStoreProduct()) {
+            initStoreLinks();
+            return;
+        }
         try { injectStyles(); } catch (e) {}
         if (isLibrary()) {
             if (location.hash && location.hash.indexOf(AUTOCHECK_HASH) !== -1) {
