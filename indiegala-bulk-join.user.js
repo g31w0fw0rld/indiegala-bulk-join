@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Bulk Tools (giveaway ticket queue + store links)
 // @namespace    http://tampermonkey.net/
-// @version      1.8.0
+// @version      1.8.1
 // @description  Unified ticket queue for Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another; add, remove and reorder mid-run, and tickets you cannot afford wait instead of killing the run. GalaSilver widget, prize checking, wheel alerts, remembered filters. On store product pages it adds GG.deals and PCGamingWiki title-search buttons. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -50,7 +50,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.8.0';
+    const SCRIPT_VERSION = '1.8.1';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     // La advertencia de automatizacion solo aplica al modulo de giveaways. En la
     // tienda este script no automatiza nada —pone dos enlaces— y avisar ahi de un
@@ -123,7 +123,7 @@
             queueRemoveBtn: '✓',
             queueRemoveBtnTooltip: 'En cola — clic para quitar',
             ignoreBtn: '✕',
-            ignoreBtnTooltip: 'No mostrarme más este giveaway. Solo afecta a lo que ves: no entra en la cola ni cambia nada en Indiegala. Reversible desde el widget.',
+            ignoreBtnTooltip: 'No mostrarme más este giveaway. Solo afecta a lo que ves: no entra en la cola ni cambia nada en Indiegala. Sale de la lista solo cuando el giveaway termina. Reversible desde el widget.',
             ignoreUndoBtn: '↺',
             ignoreUndoBtnTooltip: 'Oculto por ti — clic para volver a mostrarlo',
             queueMoveUp: 'Subir — se intentará antes',
@@ -175,6 +175,8 @@
             widgetGalaCredit: 'GalaCredit: {v}',
             widgetAvailable: 'Disponible (− cola): {n} iS',
             widgetShortfall: 'Faltan {n} iS para toda la cola',
+            widgetBalanceCapped: '⛔ Saldo máximo — ya no acumula',
+            widgetBalanceCappedTooltip: '{max} iS es el tope: mientras estés ahí, el tiempo que pase no te suma nada. Según la documentación de Indiegala se reciben {rate} iS por hora ({perDay} al día), así que el tope equivale a un día entero acumulando. Gasta boletos para volver a acumular.',
             widgetCheckBtn: '🎁 Revisar premios',
             widgetCheckBtnTooltip: 'Abre tu biblioteca en una pestaña nueva y revisa automáticamente los giveaways completados por ganar (Check all).',
             widgetBalanceUnknown: '— iS',
@@ -186,6 +188,7 @@
             widgetClearIgnoredTooltip: 'Vacía la lista de giveaways que ocultaste con ✕: todos vuelven a aparecer. No se puede deshacer.',
             clearIgnoredConfirm: '¿Volver a mostrar los {n} giveaways que ocultaste? No se puede deshacer.',
             clearIgnoredDone: 'Lista de ocultos vaciada ({n}).',
+            ignoredPruned: '🧹 Ocultos que ya terminaron, fuera de la lista ({n}).',
             widgetRememberFilters: 'Recordar filtros de búsqueda',
             widgetRememberFiltersTooltip: 'Guarda el orden, el filtro de nivel, el texto de búsqueda y la página actual, y los re-aplica al recargar. Se sobrescriben cuando los cambias. Si la página guardada ya no existe, vuelve a la 1.',
             widgetMinimize: 'Minimizar widget',
@@ -241,7 +244,7 @@
             queueRemoveBtn: '✓',
             queueRemoveBtnTooltip: 'In queue — click to remove',
             ignoreBtn: '✕',
-            ignoreBtnTooltip: 'Do not show me this giveaway again. It only affects what you see: it is not queued and nothing changes on Indiegala. Reversible from the widget.',
+            ignoreBtnTooltip: 'Do not show me this giveaway again. It only affects what you see: it is not queued and nothing changes on Indiegala. It leaves the list on its own once the giveaway ends. Reversible from the widget.',
             ignoreUndoBtn: '↺',
             ignoreUndoBtnTooltip: 'Hidden by you — click to show it again',
             queueMoveUp: 'Move up — tried sooner',
@@ -289,6 +292,8 @@
             widgetGalaCredit: 'GalaCredit: {v}',
             widgetAvailable: 'Available (− queue): {n} iS',
             widgetShortfall: 'Missing {n} iS for the whole queue',
+            widgetBalanceCapped: '⛔ Balance maxed out — not accruing',
+            widgetBalanceCappedTooltip: '{max} iS is the cap: while you sit there, the time that passes adds nothing. Per Indiegala\'s docs you get {rate} iS per hour ({perDay} a day), so the cap is one full day of accruing. Spend tickets to start accruing again.',
             widgetCheckBtn: '🎁 Check prizes',
             widgetCheckBtnTooltip: 'Opens your library in a new tab and automatically checks completed giveaways to see if you won (Check all).',
             widgetBalanceUnknown: '— iS',
@@ -300,6 +305,7 @@
             widgetClearIgnoredTooltip: 'Empties the list of giveaways you hid with ✕: all of them show up again. Cannot be undone.',
             clearIgnoredConfirm: 'Show the {n} giveaways you hid again? This cannot be undone.',
             clearIgnoredDone: 'Hidden list cleared ({n}).',
+            ignoredPruned: '🧹 Hidden giveaways that have ended, dropped from the list ({n}).',
             widgetRememberFilters: 'Remember search filters',
             widgetRememberFiltersTooltip: 'Saves the sort order, level filter, search text and current page, and re-applies them on reload. Overwritten whenever you change them. Falls back to page 1 if the saved page no longer exists.',
             widgetMinimize: 'Minimize widget',
@@ -351,6 +357,7 @@
                 '• Al hacer clic en el título de una tarjeta se encola, en vez de abrir el giveaway.',
                 '▸ Widget de GalaSilver',
                 '• Saldo en vivo leído de las respuestas del sitio, lo que queda descontando la cola, o cuánto falta para toda ella. También muestra tu GalaCredit.',
+                '• Al llegar a 240 iS avisa de que es el tope y que ahí ya no acumulas nada. El tooltip explica el ritmo de acumulación que documenta Indiegala.',
                 '▸ Premios (tu biblioteca)',
                 '• "Revisar premios" abre tu biblioteca en otra pestaña y la recorre: Giveaways → Completed to check → Check all → Completed won.',
                 '• Anuncia los premios terminados hoy en un widget dentro de la página, con enlaces, beep y contador en el título de la pestaña. Una sola vez por premio.',
@@ -359,7 +366,8 @@
                 '• Tras girar te dice el premio y recarga al cerrar tú el popup, para que el saldo quede al día. Nunca recarga con la cola corriendo ni con un diálogo abierto.',
                 '▸ Opciones del listado',
                 '• Recordar filtros de búsqueda (orden, nivel, texto y página), ocultar los giveaways en los que ya tienes boleto y elegir el idioma del script (es/en/Auto).',
-                '• El botón ✕ de cada tarjeta oculta ese giveaway para siempre (solo en tu navegador), en la esquina opuesta al ＋ o al badge ⚠×N. "Mostrar ocultos por mí" los devuelve atenuados para sacarlos de la lista con ↺, y "Limpiar ocultos (N)" la vacía de golpe.',
+                '• El botón ✕ de cada tarjeta oculta ese giveaway (solo en tu navegador), en la esquina opuesta al ＋ o al badge ⚠×N. "Mostrar ocultos por mí" los devuelve atenuados para sacarlos de la lista con ↺, y "Limpiar ocultos (N)" la vacía de golpe.',
+                '• La lista de ocultos se limpia sola: cada oculto se va cuando su giveaway termina, calculado con el "N days left" de la propia tarjeta. No hace falta vaciarla a mano para que no engorde.',
                 '▸ Fichas de la tienda',
                 '• En las páginas de producto (juegos, DLC y packs) añade dos botones bajo "Add to Cart": GG.deals busca el título en su catálogo, sin filtro de tienda ni de DRM, y PCGamingWiki lo busca para compatibilidad y arreglos. Los dos buscan por nombre, así que pueden no acertar; cada uno lo dice en su tooltip.',
                 '• Ahí no corre nada más del script: ni cola, ni automatización, ni advertencias. Solo los dos enlaces.',
@@ -385,6 +393,7 @@
                 '• Clicking a card title queues it instead of opening the giveaway.',
                 '▸ GalaSilver widget',
                 '• Live balance read from the site\'s own responses, what is left after the queue, or how much you are missing for all of it. It shows your GalaCredit too.',
+                '• At 240 iS it warns you that this is the cap and that you stop accruing there. The tooltip explains the accrual rate Indiegala documents.',
                 '▸ Prizes (your library)',
                 '• "Check prizes" opens your library in a new tab and walks it: Giveaways → Completed to check → Check all → Completed won.',
                 '• Announces prizes that ended today in a widget inside the page, with links, a beep and a tab-title badge. Once per prize.',
@@ -393,7 +402,8 @@
                 '• After a spin it tells you the prize and reloads when you close the popup, so the balance is up to date. It never reloads while the queue runs or a dialog is open.',
                 '▸ Listing options',
                 '• Remember search filters (sort, level, text and page), hide giveaways you already entered and choose the script language (es/en/Auto).',
-                '• The ✕ button on each card hides that giveaway for good (in your browser only), in the corner opposite the ＋ or the ⚠×N badge. "Show the ones I hid" brings them back dimmed so you can take them off the list with ↺, and "Clear hidden (N)" empties it in one go.',
+                '• The ✕ button on each card hides that giveaway (in your browser only), in the corner opposite the ＋ or the ⚠×N badge. "Show the ones I hid" brings them back dimmed so you can take them off the list with ↺, and "Clear hidden (N)" empties it in one go.',
+                '• The hidden list cleans itself up: each entry drops off when its giveaway ends, worked out from the card\'s own "N days left". You never have to empty it by hand to keep it from growing.',
                 '▸ Store product pages',
                 '• On product pages (games, DLC and packs) it adds two buttons under "Add to Cart": GG.deals searches the title in its catalogue, with no store or DRM filter, and PCGamingWiki searches it for compatibility and fixes. Both are title searches, so they can miss; each says so in its tooltip.',
                 '• Nothing else from the script runs there: no queue, no automation, no warnings. Just the two links.',
@@ -451,14 +461,28 @@
     // Los giveaways duran dias o semanas; a los 60 dias el gid ya no vuelve a
     // aparecer en el listado y solo engordaria el storage.
     const ENTERED_GIDS_TTL_MS = 60 * 24 * 60 * 60 * 1000;
-    // Registro { gid: timestamp } de giveaways que el usuario mando ocultar a
-    // mano con el boton ✕ ("no mostrarme mas"). Es una lista aparte de
-    // ENTERED_GIDS: esa es un hecho observado del sitio (ya tienes boleto) y se
-    // reconstruye sola; esta es una decision del usuario y solo el la revierte.
+    // Registro de giveaways que el usuario mando ocultar a mano con el boton ✕
+    // ("no mostrarme mas"). Es una lista aparte de ENTERED_GIDS: esa es un hecho
+    // observado del sitio (ya tienes boleto) y se reconstruye sola; esta es una
+    // decision del usuario, y solo la revierte el (con ↺ o "limpiar ocultos") o el
+    // fin del propio giveaway. Formato de cada entrada, mas abajo.
     const IGNORED_GIDS_KEY = 'ig-bulk-ignored-gids';
-    // Mismo razonamiento de poda que ENTERED_GIDS_TTL_MS: pasados 60 dias el
-    // giveaway ya no existe y su gid solo engordaria el storage.
+    // Respaldo, NO la poda principal. Un oculto se va de la lista cuando termina
+    // su giveaway (campo `e` del registro, aprendido del "N days left" de la
+    // tarjeta); este TTL solo cubre los que nunca llegaron a tener fecha de fin
+    // —el formato viejo de 1.7.9-1.8.0, o una tarjeta a medio cargar— para que no
+    // se queden ahi para siempre engordando el storage.
     const IGNORED_GIDS_TTL_MS = 60 * 24 * 60 * 60 * 1000;
+
+    // Tope de GalaSilver y ritmo de acumulacion, segun la documentacion oficial:
+    //   https://docs.indiegala.com/giveaways_auctions_trades/giveaways.html#how-can-i-achieve-and-gain-silver-coins-required-to-participate-in-a-giveaway
+    //   "Each hour you will be given 10 silver coins (240 per day)."
+    //   "The maximum amount of coins you can have at any one time is 240 coins."
+    // El tope SI se observa en el saldo (nunca pasa de 240); el ritmo por hora
+    // sale solo de la documentacion y no esta verificado contra el sitio, asi que
+    // el tooltip lo atribuye a los docs en vez de afirmarlo como dato propio.
+    const GALASILVER_MAX = 240;
+    const GALASILVER_PER_HOUR = 10;
     const BULK_BTN_CLASS = 'ig-bulk-join-btn';
     const BULK_BADGE_CLASS = 'ig-bulk-join-badge';
     const QBTN_CLASS = 'ig-q-btn';
@@ -1527,6 +1551,13 @@
             }
             /* Misma linea, pero cuando informa un faltante: verde mentiria. */
             #${BALANCE_WIDGET_ID} .ig-bw-avail.ig-bw-short { color: #ffcf66; }
+            /* Aviso de tope alcanzado. En rojo y no en el verde de "disponible":
+               tener el maximo no es una buena noticia, es acumulacion tirandose.
+               cursor:help porque el porque esta en el tooltip. */
+            #${BALANCE_WIDGET_ID} .ig-bw-cap {
+                font-size: 11px; color: #ff8a80; font-weight: bold;
+                margin-bottom: 8px; cursor: help; line-height: 1.25;
+            }
             #${BALANCE_WIDGET_ID} .ig-bw-credit {
                 font-size: 12px; color: #80d8ff;
                 font-weight: bold; margin-bottom: 8px;
@@ -2614,6 +2645,7 @@
                 </div>
                 <div class="ig-bw-body">
                     <div class="ig-bw-amount" id="ig-bw-amount">${T.widgetBalanceUnknown}</div>
+                    <div class="ig-bw-cap" id="ig-bw-cap" style="display:none"></div>
                     <div class="ig-bw-avail" id="ig-bw-avail" style="display:none"></div>
                     <div class="ig-bw-credit" id="ig-bw-credit" style="display:none"></div>
                     <label class="ig-bw-toggle" title="${escapeHtml(T.widgetRememberFiltersTooltip)}">
@@ -2701,8 +2733,30 @@
         refreshIgnoredWidget();
         applyBalanceMinState(w);
         const bal = getCurrentBalance();
+        // Tope alcanzado: >= y no ===, porque el saldo se lee del sitio y no hay
+        // garantia de caer justo en la cifra (una devolucion o un cambio de tope
+        // podrian dejarlo por encima).
+        const capped = bal != null && bal >= GALASILVER_MAX;
+        const cappedTip = fmt(T.widgetBalanceCappedTooltip, {
+            max: GALASILVER_MAX,
+            rate: GALASILVER_PER_HOUR,
+            perDay: GALASILVER_PER_HOUR * 24
+        });
         const amountEl = w.querySelector('#ig-bw-amount');
-        if (amountEl) amountEl.textContent = (bal == null) ? T.widgetBalanceUnknown : (bal + ' iS');
+        if (amountEl) {
+            amountEl.textContent = (bal == null) ? T.widgetBalanceUnknown : (bal + ' iS');
+            // El tooltip va tambien en la cifra grande: es donde apunta el raton
+            // de forma natural, no en el renglon de aviso.
+            amountEl.title = capped ? cappedTip : '';
+        }
+        const capEl = w.querySelector('#ig-bw-cap');
+        if (capEl) {
+            capEl.style.display = capped ? '' : 'none';
+            if (capped) {
+                capEl.textContent = T.widgetBalanceCapped;
+                capEl.title = cappedTip;
+            }
+        }
         const availEl = w.querySelector('#ig-bw-avail');
         if (availEl) {
             const pendingCost = pendingQueueCost();
@@ -2730,6 +2784,9 @@
                 creditEl.style.display = 'none';
             }
         }
+        // Aqui y no en loadIgnoredGids(): la poda corre en la primera lectura del
+        // registro, que puede ser antes de que exista <body>.
+        announceIgnoredPrune();
     }
 
     // =============================================
@@ -3439,11 +3496,58 @@
         return m ? m[1] : null;
     }
 
+    // -------- Cuando termina un giveaway, segun su propia tarjeta --------
+    // Lo unico que publica el listado es el texto de "time": "7 days left",
+    // "3 hours left". No hay fecha exacta en ningun data-*, asi que se estima
+    // desde ahi. Es la misma casilla que lee injectListing para el timeLeft de la
+    // cola (.items-list-item-data-left-bottom).
+    const ITEM_TIME_LEFT_SELECTOR = '.items-list-item-data-left-bottom';
+    const TIME_LEFT_UNIT_MS = {
+        minute: 60 * 1000,
+        hour: 60 * 60 * 1000,
+        day: 24 * 60 * 60 * 1000,
+        week: 7 * 24 * 60 * 60 * 1000,
+        month: 30 * 24 * 60 * 60 * 1000
+    };
+    // Indiegala TRUNCA la cifra: a las 3 h 45 min pone "3 hours left". Por eso se
+    // suma una unidad — la estimacion queda por encima del fin real y la poda
+    // nunca tira un giveaway que todavia esta vivo. Equivocarse hacia arriba solo
+    // deja un gid de sobra unas horas; hacia abajo reaparece un giveaway que el
+    // usuario mando ocultar, que es el fallo que se ve.
+    function parseTimeLeftMs(txt) {
+        const m = /(\d+)\s*(minute|hour|day|week|month)s?/i.exec(String(txt || ''));
+        if (!m) return null;
+        const unit = TIME_LEFT_UNIT_MS[m[2].toLowerCase()];
+        if (!unit) return null;
+        return (Number(m[1]) + 1) * unit;
+    }
+    // Instante de caducidad de la tarjeta, o null si no se pudo leer (item en
+    // `wait`, participado sin data-cont, o un formato de tiempo que no conocemos).
+    // Null NO es un error: el registro se queda sin `e` y lo cubre el TTL de
+    // respaldo hasta que otra visita si consiga leerlo.
+    function getItemExpiresAt(item) {
+        const el = item && item.querySelector(ITEM_TIME_LEFT_SELECTOR);
+        const ms = el ? parseTimeLeftMs(el.textContent) : null;
+        return ms == null ? null : Date.now() + ms;
+    }
+
     // -------- Registro persistente de gids ignorados a mano ("no mostrarme mas") --------
-    // Mismo patron de doble persistencia y poda por TTL que enteredGids, pero
-    // con semantica distinta: aqui la fuente de verdad es el usuario, no el DOM,
-    // asi que nada lo escribe salvo los botones ✕ / ↺ y "limpiar ignorados".
+    // Mismo patron de doble persistencia que enteredGids, pero con semantica
+    // distinta: aqui la fuente de verdad es el usuario, no el DOM, asi que nada
+    // lo escribe salvo los botones ✕ / ↺ y "limpiar ignorados".
+    //
+    // Cada entrada es { t, e }: `t` cuando se oculto y `e` cuando termina el
+    // giveaway (ambos ms epoch, `e` opcional). Se guarda `e` para que la lista se
+    // limpie sola: un giveaway terminado ya no puede reaparecer en el listado, asi
+    // que su gid solo seria basura. El formato de 1.7.9-1.8.0 era el numero `t`
+    // suelto, y se sigue leyendo (ver loadIgnoredGids).
     let ignoredGids = null;
+    // Ocultos que la ultima poda tiro por giveaway terminado, pendientes de
+    // avisar. No se anuncia desde loadIgnoredGids() porque esa puede correr antes
+    // de que exista <body> (y showToast necesita el DOM): solo deja el numero
+    // apuntado y renderBalanceWidget lo saca una vez, ya con la pagina montada.
+    let ignoredPrunedPending = 0;
+    let ignoredPruneAnnounced = false;
     function loadIgnoredGids() {
         if (ignoredGids) return ignoredGids;
         let raw = null;
@@ -3461,14 +3565,41 @@
             console.error('[IG-BulkTools] loadIgnoredGids error:', e);
         }
         ignoredGids = {};
-        const cutoff = Date.now() - IGNORED_GIDS_TTL_MS;
+        const now = Date.now();
+        const cutoff = now - IGNORED_GIDS_TTL_MS;
+        let expired = 0;
+        let dropped = 0;
         if (raw && typeof raw === 'object') {
             Object.keys(raw).forEach(gid => {
-                const ts = Number(raw[gid]);
-                if (!isNaN(ts) && ts > cutoff) ignoredGids[gid] = ts;
+                const v = raw[gid];
+                // Formato viejo: el timestamp de ocultado a pelo, sin fin conocido.
+                // Entra como { t } y la primera pasada de applyIgnored que vea la
+                // tarjeta le aprende el `e`.
+                const rec = (v && typeof v === 'object') ? v : { t: v };
+                const t = Number(rec.t);
+                const e = rec.e == null ? null : Number(rec.e);
+                if (isNaN(t)) { dropped++; return; }
+                // Poda principal: el giveaway ya termino.
+                if (e != null && !isNaN(e) && e <= now) { expired++; return; }
+                // Respaldo para los que nunca llegaron a tener fecha de fin.
+                if (t <= cutoff) { dropped++; return; }
+                ignoredGids[gid] = (e != null && !isNaN(e)) ? { t, e } : { t };
             });
         }
+        // Persistir la poda: sin esto el registro se limpia en memoria en cada
+        // carga pero el storage sigue creciendo hasta el siguiente ✕.
+        if (expired || dropped) {
+            ignoredPrunedPending += expired;
+            saveIgnoredGids();
+        }
         return ignoredGids;
+    }
+    function announceIgnoredPrune() {
+        if (ignoredPruneAnnounced || !ignoredPrunedPending) return;
+        ignoredPruneAnnounced = true;
+        const n = ignoredPrunedPending;
+        ignoredPrunedPending = 0;
+        showToast(fmt(T.ignoredPruned, { n }), 'info');
     }
     function saveIgnoredGids() {
         try {
@@ -3486,12 +3617,27 @@
     function ignoredCount() {
         return Object.keys(loadIgnoredGids()).length;
     }
-    function addIgnoredGid(gid) {
+    function addIgnoredGid(gid, expiresAt) {
         if (gid == null || gid === '') return;
         const map = loadIgnoredGids();
         const key = String(gid);
         if (map[key]) return;
-        map[key] = Date.now();
+        map[key] = { t: Date.now() };
+        if (expiresAt) map[key].e = expiresAt;
+        saveIgnoredGids();
+    }
+    // Afina el fin de vida de un oculto que sigue apareciendo en el listado.
+    // Se queda con la estimacion MAS BAJA a proposito: getItemExpiresAt() devuelve
+    // una cota superior (redondea hacia arriba desde un texto truncado), y como el
+    // contador de la tarjeta baja con los dias, cada visita da una cota mejor. Con
+    // esta regla la fecha converge al fin real y ademas solo se escribe cuando
+    // mejora — no en cada pasada del MutationObserver, que serian cientos.
+    function noteIgnoredExpiry(gid, expiresAt) {
+        if (!expiresAt || gid == null || gid === '') return;
+        const rec = loadIgnoredGids()[String(gid)];
+        if (!rec) return;
+        if (rec.e != null && rec.e <= expiresAt) return;
+        rec.e = expiresAt;
         saveIgnoredGids();
     }
     function removeIgnoredGid(gid) {
@@ -3643,6 +3789,11 @@
             if (window.getComputedStyle(host).position === 'static') host.style.position = 'relative';
 
             const ignored = isGidIgnored(gid);
+            // Mientras el giveaway siga saliendo en el listado, afinar su fin de
+            // vida: la tarjeta esta en el DOM aunque el CSS la esconda, asi que
+            // esto corre igual para los ocultos. Es lo que hace que la poda no
+            // dependa de haber acertado el dia en que se pulso el ✕.
+            if (ignored) noteIgnoredExpiry(gid, getItemExpiresAt(item));
             let btn = host.querySelector('.' + IGN_BTN_CLASS);
             if (!btn) {
                 btn = document.createElement('div');
@@ -3657,7 +3808,10 @@
                     e.stopPropagation();
                     const g = btn.dataset.gid;
                     if (!g) return;
-                    if (isGidIgnored(g)) removeIgnoredGid(g); else addIgnoredGid(g);
+                    // El item se busca al pulsar, por el mismo motivo que el gid:
+                    // el nodo puede haberse reciclado con otro giveaway dentro.
+                    if (isGidIgnored(g)) removeIgnoredGid(g);
+                    else addIgnoredGid(g, getItemExpiresAt(btn.closest('.items-list-item')));
                     applyIgnored();
                     refreshIgnoredWidget();
                 });

@@ -7,7 +7,7 @@ Tampermonkey userscript that adds a unified ticket-purchase queue and utilities 
 
 ![The queue panel, the GalaSilver widget and the buttons the script injects on indiegala.com/giveaways](docs/screenshot-giveaways.png)
 
-*Queue panel (bottom left), GalaSilver widget (top right) and the buttons injected on each card: ＋ to queue a Single Ticket, ✓ when already queued, ✕ in the opposite corner to hide that giveaway for good, and ⚠×N on Extra Odds cards. Queued tickets you cannot afford yet are flagged with ⏳. / Panel de la cola (abajo a la izquierda), widget de GalaSilver (arriba a la derecha) y los botones que se inyectan en cada card: ＋ para encolar un Single Ticket, ✓ si ya está en cola, ✕ en la esquina opuesta para ocultar ese giveaway para siempre, y ⚠×N en las tarjetas de Extra Odds. Los boletos encolados que aún no te alcanzan se marcan con ⏳.*
+*Queue panel (bottom left), GalaSilver widget (top right) and the buttons injected on each card: ＋ to queue a Single Ticket, ✓ when already queued, ✕ in the opposite corner to hide that giveaway until it ends, and ⚠×N on Extra Odds cards. Queued tickets you cannot afford yet are flagged with ⏳. / Panel de la cola (abajo a la izquierda), widget de GalaSilver (arriba a la derecha) y los botones que se inyectan en cada card: ＋ para encolar un Single Ticket, ✓ si ya está en cola, ✕ en la esquina opuesta para ocultar ese giveaway hasta que termine, y ⚠×N en las tarjetas de Extra Odds. Los boletos encolados que aún no te alcanzan se marcan con ⏳.*
 
 <img src="docs/screenshot-giveaways-mobile.png" width="375" alt="The same queue and balance widget on a phone-sized viewport">
 
@@ -34,6 +34,7 @@ Tampermonkey userscript that adds a unified ticket-purchase queue and utilities 
 **GalaSilver widget**
 - Live balance, read from Indiegala's own responses, plus what is left after the queue — or how much you are **missing** for all of it.
 - Shows your GalaCredit as well. Minimizable, and it remembers.
+- **Warns you at the 240 iS cap.** That is the most you can hold at once, so sitting there is accrual thrown away; the tooltip spells out the rate Indiegala documents (10 iS per hour, 240 a day).
 
 **Prizes (your library)**
 - **Check prizes** opens your library in a new tab and walks it for you: Giveaways → Completed to check → Check all → Completed won. If there is nothing to check it says so and goes on to the won list anyway.
@@ -46,7 +47,8 @@ Tampermonkey userscript that adds a unified ticket-purchase queue and utilities 
 **Listing options**
 - **Remember search filters:** sort, level filter, search text and page, re-applied on load.
 - **Hide giveaways you already entered** (remembered across reloads).
-- **Hide a giveaway by hand:** the **✕** on each card (opposite corner to that card's own control) hides it for good, in your browser only. **"Show the ones I hid"** brings them back dimmed so you can restore one with **↺**, and **"Clear hidden (N)"** empties the whole list.
+- **Hide a giveaway by hand:** the **✕** on each card (opposite corner to that card's own control) hides it, in your browser only. **"Show the ones I hid"** brings them back dimmed so you can restore one with **↺**, and **"Clear hidden (N)"** empties the whole list.
+- **The hidden list cleans itself up.** Each entry drops off when its giveaway ends — worked out from the card's own "N days left" — so you never have to empty it by hand to keep it from growing.
 - **Script language:** Spanish, English or Auto.
 - **"Learn more"** button with a summary inside the page.
 - Layout adapted to phones.
@@ -84,6 +86,7 @@ Tampermonkey userscript that adds a unified ticket-purchase queue and utilities 
 **Widget de GalaSilver**
 - Saldo en vivo, leído de las propias respuestas de Indiegala, más lo que queda descontando la cola — o cuánto te **falta** para toda ella.
 - Muestra también tu GalaCredit. Minimizable, y lo recuerda.
+- **Avisa al llegar al tope de 240 iS.** Es lo máximo que puedes tener a la vez, así que quedarse ahí es acumulación tirada; el tooltip detalla el ritmo que documenta Indiegala (10 iS por hora, 240 al día).
 
 **Premios (tu biblioteca)**
 - **Revisar premios** abre tu biblioteca en otra pestaña y la recorre por ti: Giveaways → Completed to check → Check all → Completed won. Si no hay nada por revisar lo dice y pasa igualmente a la lista de ganados.
@@ -96,7 +99,8 @@ Tampermonkey userscript that adds a unified ticket-purchase queue and utilities 
 **Opciones del listado**
 - **Recordar filtros de búsqueda:** orden, filtro de nivel, texto y página, reaplicados al cargar.
 - **Ocultar los giveaways en los que ya tienes boleto** (se recuerda al recargar).
-- **Ocultar un giveaway a mano:** la **✕** de cada tarjeta (en la esquina opuesta al control propio de esa tarjeta) lo oculta para siempre, solo en tu navegador. **"Mostrar ocultos por mí"** los devuelve atenuados para restaurar uno con **↺**, y **"Limpiar ocultos (N)"** vacía la lista entera.
+- **Ocultar un giveaway a mano:** la **✕** de cada tarjeta (en la esquina opuesta al control propio de esa tarjeta) lo oculta, solo en tu navegador. **"Mostrar ocultos por mí"** los devuelve atenuados para restaurar uno con **↺**, y **"Limpiar ocultos (N)"** vacía la lista entera.
+- **La lista de ocultos se limpia sola.** Cada oculto se va cuando termina su giveaway —calculado con el "N days left" de la propia tarjeta—, así que no hace falta vaciarla a mano para que no engorde.
 - **Idioma del script:** español, inglés o Auto.
 - Botón **"Saber más"** con un resumen dentro de la página.
 - Layout adaptado a móviles.
