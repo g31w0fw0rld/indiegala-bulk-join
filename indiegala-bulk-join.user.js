@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Bulk Tools (giveaway ticket queue + store links)
 // @namespace    http://tampermonkey.net/
-// @version      1.8.1
+// @version      1.8.2
 // @description  Unified ticket queue for Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another; add, remove and reorder mid-run, and tickets you cannot afford wait instead of killing the run. GalaSilver widget, prize checking, wheel alerts, remembered filters. On store product pages it adds GG.deals and PCGamingWiki title-search buttons. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -50,7 +50,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.8.1';
+    const SCRIPT_VERSION = '1.8.2';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     // La advertencia de automatizacion solo aplica al modulo de giveaways. En la
     // tienda este script no automatiza nada —pone dos enlaces— y avisar ahi de un
@@ -175,8 +175,8 @@
             widgetGalaCredit: 'GalaCredit: {v}',
             widgetAvailable: 'Disponible (− cola): {n} iS',
             widgetShortfall: 'Faltan {n} iS para toda la cola',
-            widgetBalanceCapped: '⛔ Saldo máximo — ya no acumula',
-            widgetBalanceCappedTooltip: '{max} iS es el tope: mientras estés ahí, el tiempo que pase no te suma nada. Según la documentación de Indiegala se reciben {rate} iS por hora ({perDay} al día), así que el tope equivale a un día entero acumulando. Gasta boletos para volver a acumular.',
+            widgetBalanceCappedTooltip: '⛔ Saldo máximo: {max} iS es el tope y, mientras estés ahí, el tiempo que pase no te suma nada. Según la documentación de Indiegala se reciben {rate} iS por hora ({perDay} al día), así que el tope equivale a un día entero acumulando. Gasta boletos para volver a acumular.',
+            widgetBalanceTooltip: 'Tienes {n} iS de un tope de {max} ({miss} para llegar). Según la documentación de Indiegala se reciben {rate} iS por hora ({perDay} al día), y al tocar el tope dejas de acumular hasta que gastes.',
             widgetCheckBtn: '🎁 Revisar premios',
             widgetCheckBtnTooltip: 'Abre tu biblioteca en una pestaña nueva y revisa automáticamente los giveaways completados por ganar (Check all).',
             widgetBalanceUnknown: '— iS',
@@ -292,8 +292,8 @@
             widgetGalaCredit: 'GalaCredit: {v}',
             widgetAvailable: 'Available (− queue): {n} iS',
             widgetShortfall: 'Missing {n} iS for the whole queue',
-            widgetBalanceCapped: '⛔ Balance maxed out — not accruing',
-            widgetBalanceCappedTooltip: '{max} iS is the cap: while you sit there, the time that passes adds nothing. Per Indiegala\'s docs you get {rate} iS per hour ({perDay} a day), so the cap is one full day of accruing. Spend tickets to start accruing again.',
+            widgetBalanceCappedTooltip: '⛔ Balance maxed out: {max} iS is the cap and, while you sit there, the time that passes adds nothing. Per Indiegala\'s docs you get {rate} iS per hour ({perDay} a day), so the cap is one full day of accruing. Spend tickets to start accruing again.',
+            widgetBalanceTooltip: 'You have {n} iS of a {max} cap ({miss} to go). Per Indiegala\'s docs you get {rate} iS per hour ({perDay} a day), and once you hit the cap you stop accruing until you spend.',
             widgetCheckBtn: '🎁 Check prizes',
             widgetCheckBtnTooltip: 'Opens your library in a new tab and automatically checks completed giveaways to see if you won (Check all).',
             widgetBalanceUnknown: '— iS',
@@ -357,7 +357,7 @@
                 '• Al hacer clic en el título de una tarjeta se encola, en vez de abrir el giveaway.',
                 '▸ Widget de GalaSilver',
                 '• Saldo en vivo leído de las respuestas del sitio, lo que queda descontando la cola, o cuánto falta para toda ella. También muestra tu GalaCredit.',
-                '• Al llegar a 240 iS avisa de que es el tope y que ahí ya no acumulas nada. El tooltip explica el ritmo de acumulación que documenta Indiegala.',
+                '• La cifra cambia de color según el saldo: amarillo mientras acumula, rojo al llegar al tope de 240 iS (ahí ya no te suma nada el tiempo que pase) y blanco en cero. El tooltip dice cuánto falta para el tope y el ritmo de acumulación que documenta Indiegala.',
                 '▸ Premios (tu biblioteca)',
                 '• "Revisar premios" abre tu biblioteca en otra pestaña y la recorre: Giveaways → Completed to check → Check all → Completed won.',
                 '• Anuncia los premios terminados hoy en un widget dentro de la página, con enlaces, beep y contador en el título de la pestaña. Una sola vez por premio.',
@@ -393,7 +393,7 @@
                 '• Clicking a card title queues it instead of opening the giveaway.',
                 '▸ GalaSilver widget',
                 '• Live balance read from the site\'s own responses, what is left after the queue, or how much you are missing for all of it. It shows your GalaCredit too.',
-                '• At 240 iS it warns you that this is the cap and that you stop accruing there. The tooltip explains the accrual rate Indiegala documents.',
+                '• The figure changes colour with your balance: yellow while accruing, red at the 240 iS cap (where the time that passes adds nothing) and white at zero. The tooltip tells you how much is left to the cap and the accrual rate Indiegala documents.',
                 '▸ Prizes (your library)',
                 '• "Check prizes" opens your library in a new tab and walks it: Giveaways → Completed to check → Check all → Completed won.',
                 '• Announces prizes that ended today in a widget inside the page, with links, a beep and a tab-title badge. Once per prize.',
@@ -1527,7 +1527,10 @@
 
             /* ===== Widget de saldo GalaSilver + Revisar premios ===== */
             #${BALANCE_WIDGET_ID} {
-                position: fixed; top: 72px; right: 16px;
+                /* top = alto del header del sitio (~56px) + el aire que lo
+                   separa de el. Ese aire es lo unico ajustable aqui: si se
+                   toca este numero, se mueve el hueco, no la posicion. */
+                position: fixed; top: 58px; right: 16px;
                 z-index: 99996;
                 background: #1f1f1f; color: #fff;
                 border: 1px solid #6a1b9a;
@@ -1541,23 +1544,26 @@
                 font-size: 11px; color: #bbb;
                 letter-spacing: 0.5px; text-transform: uppercase;
             }
+            /* La cifra carga sola el estado del saldo, con el porque en su
+               tooltip (de ahi cursor:help): amarillo mientras acumula, rojo
+               Indiegala al tocar el tope —tener el maximo no es buena noticia,
+               es acumulacion tirandose— y blanco en cero, que no es alarma
+               sino simple ausencia de saldo. */
             #${BALANCE_WIDGET_ID} .ig-bw-amount {
                 font-size: 22px; font-weight: bold;
                 color: #ffd54f; line-height: 1.1;
                 margin: 2px 0 4px;
             }
+            /* Solo cuando de verdad hay tooltip: sin saldo leido no hay nada que
+               contar y el cursor de ayuda prometeria un texto que no existe. */
+            #${BALANCE_WIDGET_ID} .ig-bw-amount[title] { cursor: help; }
+            #${BALANCE_WIDGET_ID} .ig-bw-amount.ig-bw-capped { color: #f44336; }
+            #${BALANCE_WIDGET_ID} .ig-bw-amount.ig-bw-zero { color: #fff; }
             #${BALANCE_WIDGET_ID} .ig-bw-avail {
                 font-size: 11px; color: #9ccc65; margin-bottom: 8px;
             }
             /* Misma linea, pero cuando informa un faltante: verde mentiria. */
             #${BALANCE_WIDGET_ID} .ig-bw-avail.ig-bw-short { color: #ffcf66; }
-            /* Aviso de tope alcanzado. En rojo y no en el verde de "disponible":
-               tener el maximo no es una buena noticia, es acumulacion tirandose.
-               cursor:help porque el porque esta en el tooltip. */
-            #${BALANCE_WIDGET_ID} .ig-bw-cap {
-                font-size: 11px; color: #ff8a80; font-weight: bold;
-                margin-bottom: 8px; cursor: help; line-height: 1.25;
-            }
             #${BALANCE_WIDGET_ID} .ig-bw-credit {
                 font-size: 12px; color: #80d8ff;
                 font-weight: bold; margin-bottom: 8px;
@@ -1815,7 +1821,9 @@
 
                 /* Widget de saldo: compacto, arriba a la derecha pero MAS ABAJO
                    del header para no tapar los controles de usuario del sitio
-                   (avatar / menu) en moviles. Minimizable si aun estorba. */
+                   (avatar / menu) en moviles. Minimizable si aun estorba.
+                   El aire que en escritorio se recorto aqui NO se toca: con el
+                   header movil y el dedo por medio, pegarlo estorba. */
                 #${BALANCE_WIDGET_ID} {
                     top: 64px; right: 8px;
                     padding: 8px 10px;
@@ -2645,7 +2653,6 @@
                 </div>
                 <div class="ig-bw-body">
                     <div class="ig-bw-amount" id="ig-bw-amount">${T.widgetBalanceUnknown}</div>
-                    <div class="ig-bw-cap" id="ig-bw-cap" style="display:none"></div>
                     <div class="ig-bw-avail" id="ig-bw-avail" style="display:none"></div>
                     <div class="ig-bw-credit" id="ig-bw-credit" style="display:none"></div>
                     <label class="ig-bw-toggle" title="${escapeHtml(T.widgetRememberFiltersTooltip)}">
@@ -2737,24 +2744,28 @@
         // garantia de caer justo en la cifra (una devolucion o un cambio de tope
         // podrian dejarlo por encima).
         const capped = bal != null && bal >= GALASILVER_MAX;
-        const cappedTip = fmt(T.widgetBalanceCappedTooltip, {
-            max: GALASILVER_MAX,
-            rate: GALASILVER_PER_HOUR,
-            perDay: GALASILVER_PER_HOUR * 24
-        });
         const amountEl = w.querySelector('#ig-bw-amount');
         if (amountEl) {
             amountEl.textContent = (bal == null) ? T.widgetBalanceUnknown : (bal + ' iS');
-            // El tooltip va tambien en la cifra grande: es donde apunta el raton
-            // de forma natural, no en el renglon de aviso.
-            amountEl.title = capped ? cappedTip : '';
-        }
-        const capEl = w.querySelector('#ig-bw-cap');
-        if (capEl) {
-            capEl.style.display = capped ? '' : 'none';
-            if (capped) {
-                capEl.textContent = T.widgetBalanceCapped;
-                capEl.title = cappedTip;
+            amountEl.classList.toggle('ig-bw-capped', capped);
+            amountEl.classList.toggle('ig-bw-zero', bal === 0);
+            // El aviso del tope vive entero en el tooltip de la cifra: es donde
+            // apunta el raton de forma natural y no le roba alto al widget. Se
+            // explica tambien cuando no esta lleno, que es cuando saber el ritmo
+            // de acumulacion sirve de algo; sin saldo leido no hay nada que contar.
+            if (bal == null) {
+                amountEl.removeAttribute('title');
+            } else {
+                amountEl.title = fmt(
+                    capped ? T.widgetBalanceCappedTooltip : T.widgetBalanceTooltip,
+                    {
+                        n: bal,
+                        miss: GALASILVER_MAX - bal,
+                        max: GALASILVER_MAX,
+                        rate: GALASILVER_PER_HOUR,
+                        perDay: GALASILVER_PER_HOUR * 24
+                    }
+                );
             }
         }
         const availEl = w.querySelector('#ig-bw-avail');
