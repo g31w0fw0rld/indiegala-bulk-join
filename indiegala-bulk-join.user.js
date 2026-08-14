@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Bulk Tools (giveaway ticket queue + store links)
 // @namespace    http://tampermonkey.net/
-// @version      1.8.2
+// @version      1.8.3
 // @description  Unified ticket queue for Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another; add, remove and reorder mid-run, and tickets you cannot afford wait instead of killing the run. GalaSilver widget, prize checking, wheel alerts, remembered filters. On store product pages it adds GG.deals and PCGamingWiki title-search buttons. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -50,7 +50,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.8.2';
+    const SCRIPT_VERSION = '1.8.3';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     // La advertencia de automatizacion solo aplica al modulo de giveaways. En la
     // tienda este script no automatiza nada —pone dos enlaces— y avisar ahi de un
@@ -493,6 +493,10 @@
     const BALANCE_WIDGET_ID = 'ig-balance-widget';
     const LIB_STATUS_ID = 'ig-lib-status';
     const WIN_WIDGET_ID = 'ig-win-notif';
+    // Caja del tooltip propio de los widgets y atributo donde se guarda el `title`
+    // mientras esa caja esta arriba (ver la seccion TOOLTIP PROPIO DE LOS WIDGETS).
+    const TIP_ID = 'ig-tip';
+    const TIP_STASH_ATTR = 'data-ig-tip';
 
     // Widget de saldo → "Revisar premios": abre la biblioteca en una pestaña
     // nueva con un flag en el hash. La misma instancia del script corre en
@@ -1555,8 +1559,12 @@
                 margin: 2px 0 4px;
             }
             /* Solo cuando de verdad hay tooltip: sin saldo leido no hay nada que
-               contar y el cursor de ayuda prometeria un texto que no existe. */
-            #${BALANCE_WIDGET_ID} .ig-bw-amount[title] { cursor: help; }
+               contar y el cursor de ayuda prometeria un texto que no existe. El
+               segundo selector es por el escondite del tooltip propio: mientras la
+               caja esta arriba el title no esta puesto, y sin esto el cursor
+               cambiaria de ayuda a flecha justo al aparecer el aviso. */
+            #${BALANCE_WIDGET_ID} .ig-bw-amount[title],
+            #${BALANCE_WIDGET_ID} .ig-bw-amount[${TIP_STASH_ATTR}] { cursor: help; }
             #${BALANCE_WIDGET_ID} .ig-bw-amount.ig-bw-capped { color: #f44336; }
             #${BALANCE_WIDGET_ID} .ig-bw-amount.ig-bw-zero { color: #fff; }
             #${BALANCE_WIDGET_ID} .ig-bw-avail {
@@ -2630,6 +2638,238 @@
         }, 10);
     }
 
+    // =========================================================================
+    // TOOLTIP PROPIO
+    // =========================================================================
+    // Indiegala no trae tooltip propio: usa el `title` del navegador y no hay nada
+    // suyo que reutilizar, al reves que en Steam, GOG, Humble o Epic, donde el aviso
+    // se dibuja con el del sitio. Pero lo que este script pinta —los dos widgets
+    // flotantes y la fila de enlaces de la ficha de tienda— SI es UI suya, con su
+    // hoja de estilos y su paleta, asi que una caja con esos mismos colores no imita
+    // a nadie: se lee como una pieza mas. Fuera de ahi no se toca nada: los `title`
+    // de las tarjetas del listado se quedan como estan.
+    //
+    // Va por delegacion y leyendo el `title` que los controles ya llevan puesto, en
+    // vez de engancharse a cada uno. Dos motivos:
+    //   1. La cola se repinta entera con innerHTML cada vez que cambia, asi que
+    //      cualquier enganche por elemento se perderia en el primer repintado.
+    //   2. El `title` sigue siendo la fuente del texto, asi que un control nuevo
+    //      dentro de esas zonas hereda el tooltip sin tocar esta seccion.
+    // Mientras la caja esta arriba el `title` se guarda en TIP_STASH_ATTR y se quita
+    // del elemento: es lo que evita ver los dos avisos, el nuestro y el del sistema,
+    // uno encima del otro. Al cerrarla se devuelve, asi que el `title` sigue ahi para
+    // el nombre accesible del control y como respaldo.
+    const TIP_STYLES_ID = 'ig-tip-styles';
+    const TIP_DELAY_MS = 250;
+    const TIP_GAP = 10;     // hueco entre la caja y el elemento al que se ancla
+    const TIP_MARGIN = 8;   // margen que se respeta al borde de la ventana
+    // Un elemento deja de casar con [title] en cuanto se le guarda el aviso, asi que
+    // el escondite entra tambien en el selector: sin el, volver a entrar en el mismo
+    // control se leeria como salir de la zona con tooltip y cerraria la caja.
+    const TIP_SELECTOR = `[title], [${TIP_STASH_ATTR}]`;
+
+    let tipScopeSel = null;
+    let tipEl = null;
+    let tipAnchor = null;    // control que tiene la caja arriba ahora mismo
+    let tipPending = null;   // control cuyo retardo esta corriendo
+    let tipTimer = null;
+    let tipBound = false;
+
+    /**
+     * Zonas donde este tooltip sustituye al del navegador. Se arma al primer uso y
+     * no como const: STORE_LINKS_ID se declara mas abajo, en el modulo de tienda, y
+     * leerlo al cargar el script reventaria antes de que exista.
+     * @returns {string} El selector de las tres zonas.
+     */
+    function tipScope() {
+        if (!tipScopeSel) tipScopeSel = `#${BALANCE_WIDGET_ID}, #${PANEL_ID}, #${STORE_LINKS_ID}`;
+        return tipScopeSel;
+    }
+
+    /**
+     * Estilos de la caja. En hoja aparte y no en injectStyles(), porque ese CSS es
+     * todo del modulo de giveaways y en una ficha de tienda no se inyecta —y ahi
+     * tambien hace falta la caja—.
+     */
+    function injectTipStyles() {
+        if (document.getElementById(TIP_STYLES_ID)) return;
+        const style = document.createElement('style');
+        style.id = TIP_STYLES_ID;
+        style.textContent = `
+            /* Cuelga del <body> y no de la zona a la que sirve: los widgets tienen
+               borde redondeado, el panel de cola scrollea y la fila de la ficha vive
+               en una caja con overflow, asi que dentro se recortaria. Paleta la del
+               widget —fondo un punto mas claro que su #1f1f1f para que se despegue, y
+               el morado de "Saber mas" en el borde—. */
+            #${TIP_ID} {
+                position: fixed;
+                /* Por encima de los dos widgets (99996 y 99997) y de los avisos, que
+                   es lo unico que podria taparlo mientras se apunta a un control. */
+                z-index: 100002;
+                max-width: 300px;
+                padding: 8px 10px;
+                background: #2a2a2a; color: #f2f2f2;
+                border: 1px solid #b14cff;
+                border-radius: 6px;
+                box-shadow: 0 4px 16px rgba(0,0,0,0.55);
+                font-family: sans-serif;
+                font-size: 12px; line-height: 1.35;
+                /* Varios avisos pasan de 200 caracteres: sin esto saldrian en una
+                   linea infinita fuera de la pantalla. */
+                white-space: normal;
+                /* La caja no puede robarle el hover al control ni taparle el clic. */
+                pointer-events: none;
+                opacity: 0;
+                transition: opacity 0.12s ease;
+            }
+            #${TIP_ID}.ig-tip-visible { opacity: 1; }
+        `;
+        (document.head || document.documentElement).appendChild(style);
+    }
+
+    function ensureTipNode() {
+        injectTipStyles();
+        if (tipEl && tipEl.isConnected) return tipEl;
+        tipEl = document.createElement('div');
+        tipEl.id = TIP_ID;
+        tipEl.setAttribute('role', 'tooltip');
+        document.body.appendChild(tipEl);
+        return tipEl;
+    }
+
+    /**
+     * Coloca la caja. Dos reglas segun donde viva el control, porque el sitio libre
+     * no esta en el mismo lado:
+     *   - En los widgets, al lado del WIDGET y centrada en el control. Los dos viven
+     *     pegados a un borde de la pantalla (el de saldo arriba a la derecha, el de
+     *     la cola abajo a la izquierda), asi que anclando al widget todos sus avisos
+     *     salen alineados en la misma columna en vez de bailar segun el control.
+     *   - En la ficha de tienda, encima del boton y centrada en el, como cualquier
+     *     tooltip: la fila esta metida en la columna de compra y a los lados no hay
+     *     hueco. Si arriba no cabe, debajo.
+     * @param {HTMLElement} anchor - El control apuntado.
+     */
+    function positionTip(anchor) {
+        const scope = anchor.closest(tipScope()) || anchor;
+        const box = tipEl.getBoundingClientRect();
+        const a = anchor.getBoundingClientRect();
+        const s = scope.getBoundingClientRect();
+        const vw = document.documentElement.clientWidth;
+        const vh = document.documentElement.clientHeight;
+
+        let left, top;
+        if (scope.id === STORE_LINKS_ID) {
+            left = a.left + a.width / 2 - box.width / 2;
+            top = a.top - box.height - TIP_GAP;
+            if (top < TIP_MARGIN) top = Math.min(a.bottom + TIP_GAP, vh - box.height - TIP_MARGIN);
+        } else {
+            // Por defecto a la izquierda del widget; si ahi no cabe, al otro lado.
+            left = s.left - box.width - TIP_GAP;
+            if (left < TIP_MARGIN) left = s.right + TIP_GAP;
+            top = a.top + a.height / 2 - box.height / 2;
+        }
+        left = Math.max(TIP_MARGIN, Math.min(left, vw - box.width - TIP_MARGIN));
+        top = Math.max(TIP_MARGIN, Math.min(top, vh - box.height - TIP_MARGIN));
+
+        tipEl.style.left = `${left}px`;
+        tipEl.style.top = `${top}px`;
+    }
+
+    /** Muestra la caja de un control y le guarda el `title`. */
+    function showTip(anchor) {
+        if (!anchor.isConnected) return;  // el widget se repinto durante el retardo
+        const text = anchor.getAttribute('title') || anchor.getAttribute(TIP_STASH_ATTR);
+        if (!text) return;
+        ensureTipNode();
+        tipEl.textContent = text;
+        anchor.setAttribute(TIP_STASH_ATTR, text);
+        anchor.removeAttribute('title');
+        tipAnchor = anchor;
+        // Primero el texto y la posicion, y solo despues visible: si no, la caja
+        // aparece un fotograma en la esquina anterior antes de recolocarse.
+        positionTip(anchor);
+        tipEl.classList.add('ig-tip-visible');
+    }
+
+    /** Cierra la caja y le devuelve el `title` al control. */
+    function hideTip() {
+        clearTimeout(tipTimer);
+        tipTimer = null;
+        tipPending = null;
+        if (tipAnchor) {
+            const stashed = tipAnchor.getAttribute(TIP_STASH_ATTR);
+            // Solo se devuelve si nadie escribio uno nuevo mientras tanto: el aviso
+            // de la cifra de saldo se reescribe cada vez que se relee el saldo, y
+            // restaurar a ciegas pisaria el dato fresco con el viejo.
+            if (stashed != null && !tipAnchor.title) tipAnchor.title = stashed;
+            tipAnchor.removeAttribute(TIP_STASH_ATTR);
+            tipAnchor = null;
+        }
+        if (tipEl) tipEl.classList.remove('ig-tip-visible');
+    }
+
+    /**
+     * Escribe el aviso de un control respetando la caja abierta. Si el control es
+     * justo el que la tiene arriba, su `title` no esta puesto —esta guardado—, asi
+     * que escribirlo ahi haria salir los dos avisos a la vez; se actualizan el
+     * escondite y la caja. Lo usa la cifra de saldo, que se reescribe sola cada vez
+     * que se relee el saldo y puede hacerlo con el raton encima.
+     * @param {HTMLElement} el - El control.
+     * @param {string} text - El aviso.
+     */
+    function setTipText(el, text) {
+        if (tipAnchor === el) {
+            el.setAttribute(TIP_STASH_ATTR, text);
+            if (tipEl) { tipEl.textContent = text; positionTip(el); }
+            return;
+        }
+        el.title = text;
+    }
+
+    /** El control con aviso bajo el puntero/foco, o null si no lo hay. */
+    function tipTargetFrom(node) {
+        if (!node || !node.closest) return null;
+        const el = node.closest(TIP_SELECTOR);
+        return el && el.closest(tipScope()) ? el : null;
+    }
+
+    function tipEnter(target) {
+        if (!target) { if (tipAnchor || tipPending) hideTip(); return; }
+        if (target === tipAnchor || target === tipPending) return;
+        hideTip();
+        tipPending = target;
+        tipTimer = setTimeout(() => { tipPending = null; showTip(target); }, TIP_DELAY_MS);
+    }
+
+    /**
+     * Engancha el tooltip propio. Una sola vez y por delegacion en el documento: no
+     * hay nada que reenganchar cuando la cola se repinta ni cuando la ficha tarda en
+     * montar sus enlaces.
+     */
+    function initOwnTooltips() {
+        if (tipBound) return;
+        tipBound = true;
+        // mouseover salta en CADA elemento al que se entra, tambien en los que no
+        // llevan aviso: por eso cierra la caja el simple hecho de salir del control,
+        // sin necesidad de un mouseout aparte.
+        document.addEventListener('mouseover', (e) => tipEnter(tipTargetFrom(e.target)));
+        // Con el puntero fuera del documento (barra del navegador, otra ventana) ya
+        // no hay mouseover que cierre la caja.
+        document.addEventListener('mouseleave', hideTip);
+        // Por teclado el aviso sale sin retardo: llegar tabulando ya es intencion.
+        document.addEventListener('focusin', (e) => {
+            const target = tipTargetFrom(e.target);
+            hideTip();
+            if (target) showTip(target);
+        });
+        document.addEventListener('focusout', hideTip);
+        // Con la pagina en movimiento la caja quedaria flotando fuera de sitio, y
+        // tras un clic estorba (el boton ya hizo lo suyo).
+        window.addEventListener('scroll', hideTip, { passive: true, capture: true });
+        window.addEventListener('resize', hideTip, { passive: true });
+        document.addEventListener('click', hideTip, true);
+    }
+
     function renderBalanceWidget() {
         if (isLibrary()) {
             const ex = document.getElementById(BALANCE_WIDGET_ID);
@@ -2754,9 +2994,13 @@
             // explica tambien cuando no esta lleno, que es cuando saber el ritmo
             // de acumulacion sirve de algo; sin saldo leido no hay nada que contar.
             if (bal == null) {
+                // Si la caja estaba arriba justo en la cifra, se cierra: sin saldo
+                // no hay nada que contar y quedaria enseñando el dato anterior.
+                if (tipAnchor === amountEl) hideTip();
                 amountEl.removeAttribute('title');
+                amountEl.removeAttribute(TIP_STASH_ATTR);
             } else {
-                amountEl.title = fmt(
+                setTipText(amountEl, fmt(
                     capped ? T.widgetBalanceCappedTooltip : T.widgetBalanceTooltip,
                     {
                         n: bal,
@@ -2765,7 +3009,7 @@
                         rate: GALASILVER_PER_HOUR,
                         perDay: GALASILVER_PER_HOUR * 24
                     }
-                );
+                ));
             }
         }
         const availEl = w.querySelector('#ig-bw-avail');
@@ -4546,6 +4790,11 @@
     //     (flag en el hash), la secuencia de auto-revision.
     //   /giveaways*            -> el flujo normal (cola, badges, widget de saldo).
     function boot() {
+        // Los avisos de lo que pinta el script —los dos widgets y los dos enlaces de
+        // la ficha— se dibujan con caja propia en vez de con la del navegador. Va
+        // aqui arriba, en los dos caminos, porque es delegado: se engancha una vez y
+        // sirve a las tres zonas, existan ya o no.
+        try { initOwnTooltips(); } catch (e) {}
         if (isStoreProduct()) {
             initStoreLinks();
             return;
