@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Bulk Tools (giveaway ticket queue + store links)
 // @namespace    http://tampermonkey.net/
-// @version      1.8.3
+// @version      1.8.4
 // @description  Unified ticket queue for Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another; add, remove and reorder mid-run, and tickets you cannot afford wait instead of killing the run. GalaSilver widget, prize checking, wheel alerts, remembered filters. On store product pages it adds GG.deals and PCGamingWiki title-search buttons. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -50,7 +50,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.8.3';
+    const SCRIPT_VERSION = '1.8.4';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     // La advertencia de automatizacion solo aplica al modulo de giveaways. En la
     // tienda este script no automatiza nada —pone dos enlaces— y avisar ahi de un
@@ -344,6 +344,9 @@
             langTip: 'Idioma de ESTE script (no cambia el idioma de Indiegala, que no tiene versiones por idioma). "Auto" usa el idioma de tu navegador. Al cambiarlo se recarga la página.',
             aboutTip: 'Ver qué hace este script en su totalidad.',
             aboutTitle: '¿Qué hace este script?',
+            aboutName: 'Nombre:',
+            aboutVersion: 'Versión:',
+            aboutAuthor: 'Autor:',
             aboutBody: [
                 '⚠️ USO BAJO TU PROPIO RIESGO: automatizar compras viola la política anti-spam de Indiegala y puede causar ban permanente.',
                 'Este script añade a Indiegala Giveaways una cola unificada de compra de boletos y varias utilidades alrededor, y a las fichas de la tienda dos enlaces de consulta.',
@@ -380,6 +383,9 @@
             langTip: 'Language of THIS script (it does not change Indiegala\'s language, which has no per-language versions). "Auto" uses your browser language. Changing it reloads the page.',
             aboutTip: 'See everything this script does.',
             aboutTitle: 'What does this script do?',
+            aboutName: 'Name:',
+            aboutVersion: 'Version:',
+            aboutAuthor: 'Author:',
             aboutBody: [
                 '⚠️ USE AT YOUR OWN RISK: automating purchases violates Indiegala\'s anti-spam policy and may cause a permanent ban.',
                 'This script adds a unified ticket-purchase queue to Indiegala Giveaways, plus a few utilities around it, and two lookup links on store product pages.',
@@ -411,7 +417,10 @@
             ]
         }
     };
-    const TX = EXTRA_I18N[LANG] || EXTRA_I18N.en;
+    // Se fusiona sobre el inglés en vez de elegir uno u otro: así una clave que
+    // exista solo en `en` —recién añadida, o que se olvide de traducir— sale en
+    // inglés en vez de salir como `undefined` en pantalla.
+    const TX = { ...EXTRA_I18N.en, ...(EXTRA_I18N[LANG] || {}) };
 
     // =============================================
     // CONFIG
@@ -2556,86 +2565,236 @@
     // injectAll (periodico) y desde los puntos donde cambia el saldo.
 
     // --- Modal "Saber más" (autocontenido) --------------------------------------
+    // Tres bandas: cabecera fija (título + ficha), cuerpo scrollable y botón fijo,
+    // como el modal de información de los scripts de Twitch y Kick. Antes scrolleaba
+    // la caja ENTERA, y con un cuerpo de 27 párrafos eso se llevaba el título fuera
+    // de vista y dejaba el botón de cerrar al final del scroll: se abría un panel sin
+    // encabezado del que no era evidente cómo salir.
+    const ABOUT_ID = 'ig-about-overlay';
+    const ABOUT_NAME = 'Indiegala Bulk Tools';
+    const ABOUT_REPO = 'g31w0fw0rld/indiegala-bulk-join';
+    // Paleta del modal: el morado de Indiegala, su tono claro para acentos sobre
+    // fondo oscuro, y el ámbar de los avisos, que es el mismo de las alertas del panel.
+    const ABOUT_BG = '#1b1230';
+    const ABOUT_FG = '#f3eefb';
+    const ABOUT_ACCENT = '#c88bff';
+    const ABOUT_BTN = '#b14cff';
+    const ABOUT_WARN = '#ffcf66';
+    const ABOUT_LINE = '#33244f';
+    const ABOUT_MUTED = '#b0a3c4';
+    const ABOUT_ITEM = '#ddd2ee';
+
+    // El separador de las etiquetas ("Nombre:" / "Name:") se toma de una ya
+    // traducida, para que "GitHub" y "Ko-fi" —que no se traducen— no contradigan
+    // la puntuación del idioma activo.
+    function aboutColon() {
+        const m = String(TX.aboutVersion || ':').match(/\s*[:：]\s*$/);
+        return m ? m[0] : ':';
+    }
+
+    // Marca inerte el resto de la página mientras el modal está abierto, y guarda lo
+    // que hubiera para devolverlo tal cual al cerrar. Sin esto el tabulador se pasea
+    // por la página que hay detrás del overlay, que no se ve pero sigue ahí.
+    function aboutSetInert(overlay, on) {
+        if (on) {
+            const saved = [];
+            Array.from(document.body.children).forEach((el) => {
+                if (el === overlay) return;
+                saved.push({ el, ariaHidden: el.getAttribute('aria-hidden') });
+                try { el.setAttribute('aria-hidden', 'true'); el.inert = true; } catch (e) { /* noop */ }
+            });
+            overlay._savedInert = saved;
+        } else {
+            (overlay._savedInert || []).forEach((s) => {
+                try {
+                    if (s.ariaHidden === null) s.el.removeAttribute('aria-hidden');
+                    else s.el.setAttribute('aria-hidden', s.ariaHidden);
+                    s.el.inert = false;
+                } catch (e) { /* noop */ }
+            });
+            overlay._savedInert = null;
+        }
+    }
+
+    // Una fila del cuerpo. Los marcadores del texto son ESTRUCTURA, no texto: se
+    // consumen y se traducen a jerarquía visual. Aquí no hay markdown —esto va por
+    // textContent—, así que el marcador es la única vía:
+    //   '▸' encabezado de grupo · '•' punto de la lista · '⚠' aviso.
+    // La sangría de los puntos es francesa (padding + text-indent negativo) para que
+    // al partirse la línea la segunda no vuelva al margen.
+    function aboutRow(raw, prevKind) {
+        const text = String(raw).replace(/^\s+/, '');
+        const row = document.createElement('div');
+        let kind = 'plain';
+        if (text.startsWith('▸')) {
+            kind = 'head';
+            row.textContent = text.slice(1).trim();
+            Object.assign(row.style, {
+                color: ABOUT_ACCENT, fontWeight: '700', fontSize: '15px',
+                marginBottom: '8px', marginTop: prevKind ? '20px' : '0'
+            });
+        } else if (text.startsWith('⚠')) {
+            kind = 'warn';
+            row.textContent = text;
+            Object.assign(row.style, {
+                color: ABOUT_WARN, fontWeight: '600', marginBottom: '10px',
+                paddingInlineStart: '26px', textIndent: '-26px'
+            });
+        } else if (text.startsWith('•')) {
+            kind = 'item';
+            row.textContent = text;
+            Object.assign(row.style, {
+                paddingInlineStart: '24px', textIndent: '-14px', marginBottom: '7px', color: ABOUT_ITEM
+            });
+        } else {
+            row.textContent = text;
+            row.style.marginBottom = '10px';
+            // Un párrafo suelto detrás de una lista es la coda del bloque, no otro
+            // punto de la lista: sin este respiro se lee pegado al último punto.
+            if (prevKind && prevKind !== 'plain' && prevKind !== 'warn') row.style.marginTop = '16px';
+        }
+        return { row, kind };
+    }
+
     function showAboutModal() {
-        if (document.getElementById('ig-about-overlay')) return;
+        if (document.getElementById(ABOUT_ID)) return;
         const overlay = document.createElement('div');
-        overlay.id = 'ig-about-overlay';
+        overlay.id = ABOUT_ID;
         Object.assign(overlay.style, {
             position: 'fixed', inset: '0', width: '100%', height: '100%',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
+            // El padding reserva el hueco contra el que se acota la caja (maxHeight
+            // al 100%), y de paso evita que quede pegada a los bordes de la ventana.
+            padding: '24px', boxSizing: 'border-box',
             background: 'rgba(0,0,0,0.6)', zIndex: '2147483647',
             transition: 'opacity 180ms ease', opacity: '0'
         });
         const box = document.createElement('div');
         Object.assign(box.style, {
-            background: '#1b1230', color: '#f3eefb', borderRadius: '14px',
-            padding: '26px 30px', minWidth: '320px', maxWidth: '580px',
-            maxHeight: '80vh', overflowY: 'auto', boxSizing: 'border-box',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.5)', border: '1px solid #b14cff',
-            fontFamily: 'system-ui, sans-serif', fontSize: '14px', lineHeight: '1.5',
+            background: ABOUT_BG, color: ABOUT_FG, borderRadius: '14px',
+            padding: '26px 30px', minWidth: 'min(340px, 100%)', maxWidth: '580px',
+            maxHeight: '100%', boxSizing: 'border-box',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.5)', border: `1px solid ${ABOUT_BTN}`,
+            fontFamily: 'system-ui, sans-serif', fontSize: '14px', lineHeight: '1.55',
+            // Flex en columna con overflow oculto: scrollea solo la banda del medio.
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
             transform: 'translateY(8px) scale(0.98)', opacity: '0',
             transition: 'transform 180ms ease, opacity 180ms ease'
         });
+
+        const hairline = () => {
+            const hr = document.createElement('div');
+            Object.assign(hr.style, {
+                height: '1px', background: ABOUT_LINE, margin: '14px 0', flexShrink: '0'
+            });
+            return hr;
+        };
+
+        // --- Cabecera fija: título y ficha ---
+        const head = document.createElement('div');
+        head.style.flexShrink = '0';
+
         const title = document.createElement('div');
         title.textContent = TX.aboutTitle;
-        title.style.cssText = 'font-weight:bold;font-size:17px;margin-bottom:14px;color:#c88bff;';
-        box.appendChild(title);
-        (TX.aboutBody || []).forEach((p) => {
-            const row = document.createElement('div');
-            const trimmed = String(p).replace(/^\s+/, '');
-            row.textContent = trimmed;
-            row.style.marginBottom = '8px';
-            if (trimmed.startsWith('•')) row.style.paddingLeft = '10px';
-            if (trimmed.startsWith('⚠')) { row.style.color = '#ffcf66'; row.style.fontWeight = '600'; }
-            // '▸' marca encabezado de grupo. Son ~19 puntos y sin jerarquia no
-            // se leen; aqui no hay markdown (esto va por textContent), asi que
-            // el marcador es la unica via. Se consume: es estructura, no texto.
-            if (trimmed.startsWith('▸')) {
-                row.textContent = trimmed.slice(1).trim();
-                row.style.color = '#c88bff';
-                row.style.fontWeight = '700';
-                row.style.marginTop = '14px';
-            }
-            box.appendChild(row);
+        title.style.cssText = `font-weight:bold;font-size:17px;margin-bottom:12px;color:${ABOUT_ACCENT};`;
+        head.appendChild(title);
+
+        // Ficha en rejilla de dos columnas: así los cinco valores quedan alineados
+        // en vez de escalonados según lo que mida cada etiqueta.
+        const meta = document.createElement('div');
+        Object.assign(meta.style, {
+            display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)',
+            columnGap: '10px', rowGap: '5px', fontSize: '13px'
         });
-        const gh = document.createElement('a');
-        gh.href = 'https://github.com/g31w0fw0rld/indiegala-bulk-join';
-        gh.target = '_blank'; gh.rel = 'noopener';
-        gh.textContent = 'github.com/g31w0fw0rld/indiegala-bulk-join';
-        gh.style.cssText = 'display:inline-block;margin-top:6px;color:#c88bff;text-decoration:underline;font-size:12px;';
-        box.appendChild(gh);
-        const kofi = document.createElement('a');
-        kofi.href = 'https://ko-fi.com/g31w0fw0rld';
-        kofi.target = '_blank'; kofi.rel = 'noopener';
-        kofi.textContent = '☕ Apóyame en Ko-fi / Support me on Ko-fi';
-        kofi.style.cssText = 'display:block;margin-top:8px;color:#c88bff;text-decoration:underline;font-size:12px;';
-        box.appendChild(kofi);
-        const foot = document.createElement('div');
-        foot.textContent = 'v' + SCRIPT_VERSION + ' · g31w0fw0rld';
-        foot.style.cssText = 'margin-top:2px;font-size:12px;opacity:0.7;';
-        box.appendChild(foot);
+        const colon = aboutColon();
+        [
+            { label: TX.aboutName, value: ABOUT_NAME },
+            { label: TX.aboutVersion, value: SCRIPT_VERSION },
+            { label: TX.aboutAuthor, value: 'g31w0fw0rld' },
+            { label: 'GitHub' + colon, value: 'github.com/' + ABOUT_REPO, isLink: true },
+            { label: '☕ Ko-fi' + colon, value: 'ko-fi.com/g31w0fw0rld', isLink: true }
+        ].forEach((r) => {
+            const label = document.createElement('div');
+            label.textContent = r.label;
+            Object.assign(label.style, { fontWeight: '600', color: ABOUT_MUTED, whiteSpace: 'nowrap' });
+            meta.appendChild(label);
+            const val = document.createElement('div');
+            // Sin esto la URL no parte y estira la caja más allá de su maxWidth.
+            Object.assign(val.style, { minWidth: '0', overflowWrap: 'anywhere' });
+            if (r.isLink) {
+                const a = document.createElement('a');
+                a.href = 'https://' + r.value;
+                a.textContent = r.value;
+                a.target = '_blank'; a.rel = 'noopener noreferrer';
+                a.style.color = ABOUT_ACCENT;
+                a.style.textDecoration = 'underline';
+                val.appendChild(a);
+            } else {
+                val.textContent = r.value;
+            }
+            meta.appendChild(val);
+        });
+        head.appendChild(meta);
+        head.appendChild(hairline());
+        box.appendChild(head);
+
+        // --- Cuerpo scrollable ---
+        const body = document.createElement('div');
+        Object.assign(body.style, {
+            overflowY: 'auto', minHeight: '0', paddingInlineEnd: '4px'
+        });
+        // `prevKind` arranca en null a propósito: marca "no hay nada encima", que es
+        // lo que distingue al primer párrafo —aquí el aviso de riesgo, que abre el
+        // cuerpo pegado a la línea divisoria— de los demás.
+        let prevKind = null;
+        (TX.aboutBody || []).forEach((p) => {
+            const { row, kind } = aboutRow(p, prevKind);
+            body.appendChild(row);
+            prevKind = kind;
+        });
+        box.appendChild(body);
+        box.appendChild(hairline());
+
+        // --- Botón fijo ---
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
         closeBtn.textContent = TX.close;
-        closeBtn.style.cssText = 'display:block;margin-top:16px;padding:8px 14px;background:#b14cff;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:bold;font-size:13px;';
+        closeBtn.style.cssText = `flex-shrink:0;align-self:center;padding:8px 18px;background:${ABOUT_BTN};color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;`;
+        closeBtn.addEventListener('mouseenter', () => { closeBtn.style.opacity = '0.85'; });
+        closeBtn.addEventListener('mouseleave', () => { closeBtn.style.opacity = '1'; });
         box.appendChild(closeBtn);
+
+        // El listener de Escape vive en document —el modal no tiene por qué tener el
+        // foco dentro cuando llega la tecla—, así que hay que quitarlo SIEMPRE al
+        // cerrar, también desde el botón: si no, se acumula uno por cada apertura.
         const closeIt = () => {
+            document.removeEventListener('keydown', onKey);
+            overlay.removeEventListener('click', onClick);
             overlay.style.opacity = '0'; box.style.opacity = '0';
             box.style.transform = 'translateY(8px) scale(0.98)';
-            document.removeEventListener('keydown', onKey);
-            setTimeout(() => overlay.remove(), 180);
+            setTimeout(() => {
+                aboutSetInert(overlay, false);
+                overlay.remove();
+            }, 180);
         };
         const onKey = (e) => { if (e.key === 'Escape') closeIt(); };
+        // Solo el fondo: un clic dentro de la caja no debe cerrar.
+        const onClick = (e) => { if (e.target === overlay) closeIt(); };
         closeBtn.addEventListener('click', closeIt);
-        overlay.addEventListener('click', (e) => { if (e.target === overlay) closeIt(); });
+        overlay.addEventListener('click', onClick);
         document.addEventListener('keydown', onKey);
+
         overlay.appendChild(box);
         document.body.appendChild(overlay);
+        aboutSetInert(overlay, true);
         setTimeout(() => {
             overlay.style.opacity = '1';
             box.style.transform = 'translateY(0) scale(1)';
             box.style.opacity = '1';
         }, 10);
+        // Sin esto el foco se queda en el ℹ️ del panel, que aboutSetInert acaba de
+        // marcar inert, y se cae a <body>.
+        setTimeout(() => { try { closeBtn.focus(); } catch (e) { /* noop */ } }, 120);
     }
 
     // =========================================================================
