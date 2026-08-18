@@ -55,8 +55,8 @@ Tampermonkey userscript that adds a unified ticket-purchase queue and utilities 
 
 **Store pages** (`/store/game/*`, `/store/product/*` — games, DLC and packs alike)
 - **[GG.deals](https://gg.deals/)** — where else that game is on sale, and for how much. It searches the **catalogue** by title (`/games/`), the same target the Humble Bundle script uses, so you land on the game's own page with its history and every offer.
-- **[PCGamingWiki](https://www.pcgamingwiki.com/)** — compatibility, fixes, ultrawide and frame-rate notes. It searches by title.
-- **Both are title searches, so they can miss**, and each says exactly that in its tooltip.
+- **[PCGamingWiki](https://www.pcgamingwiki.com/)** — compatibility, fixes, ultrawide and frame-rate notes. It searches without the edition suffix and, on a DLC, by the base game the page itself declares — the wiki documents DLC inside the game and has no page of its own for them.
+- **Both are name searches, so they can miss**, and each says exactly that in its tooltip.
 - **Every tooltip the script draws is its own**, not the browser's little grey box: same palette as the widgets, wide enough for the long ones and readable over the page. It covers the GalaSilver widget, the queue panel and these two buttons — Indiegala has no tooltip of its own to borrow, and these are the script's own controls. The browser tooltip stays underneath as the fallback, so nothing is lost if it cannot be drawn.
 - **No DRM filter, on purpose.** Steam, GOG, Epic and Microsoft Store are single-DRM shops, so their scripts can pin GG.deals' DRM filter and always be right. IndieGala resells keys for several stores *and* sells DRM-free games, so there is no filter that is correct for the whole store — and the catalogue search ignores that parameter anyway.
 - **The title comes from the page's own purchase button**, the cleanest source: the `<h1>` drags the delivery suffix along (`DOOM VFR *Steam Key*`) and sometimes the destination store in brackets (`Sid Meier's Civilization VI (Epic)`), and neither belongs in a search. Accents are dropped for GG.deals, which transliterates in its index, and kept for PCGamingWiki.
@@ -108,7 +108,7 @@ Tampermonkey userscript that adds a unified ticket-purchase queue and utilities 
 
 **Fichas de la tienda** (`/store/game/*`, `/store/product/*` — juegos, DLC y packs por igual)
 - **[GG.deals](https://gg.deals/)** —en qué otras tiendas está de oferta ese juego, y a cuánto—. Busca por título en el **catálogo** (`/games/`), el mismo destino que usa el script de Humble Bundle, así que caes en la ficha del juego con su histórico y todas sus ofertas.
-- **[PCGamingWiki](https://www.pcgamingwiki.com/)** —compatibilidad, arreglos, ultrapanorámico y notas de frame rate—. Busca por título.
+- **[PCGamingWiki](https://www.pcgamingwiki.com/)** —compatibilidad, arreglos, ultrapanorámico y notas de frame rate—. Busca sin el sufijo de edición y, en un DLC, por el juego base que la propia ficha declara: la wiki documenta los DLC dentro del juego y no tiene página propia para ellos.
 - **Los dos buscan por nombre, así que pueden no acertar**, y cada uno lo dice tal cual en su tooltip.
 - **Todos los tooltips que dibuja el script son suyos**, no la cajita gris del navegador: la paleta de los widgets, ancho suficiente para los largos y legibles sobre la página. Cubre el widget de GalaSilver, el panel de la cola y estos dos botones —Indiegala no tiene tooltip propio que tomar prestado, y estos controles son del script—. El del navegador se queda debajo como respaldo, así que no se pierde nada si no se pudiera dibujar.
 - **Sin filtro de DRM, a propósito.** Steam, GOG, Epic y Microsoft Store son tiendas de un solo DRM, así que sus scripts pueden fijar el filtro de GG.deals y acertar siempre. IndieGala revende llaves de varias tiendas *y* vende juegos sin DRM, así que no hay un filtro correcto para toda la tienda —y la búsqueda del catálogo ignora ese parámetro de todas formas—.

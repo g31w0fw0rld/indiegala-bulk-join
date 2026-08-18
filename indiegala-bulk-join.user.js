@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Bulk Tools (giveaway ticket queue + store links)
 // @namespace    http://tampermonkey.net/
-// @version      1.8.4
+// @version      1.9.0
 // @description  Unified ticket queue for Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another; add, remove and reorder mid-run, and tickets you cannot afford wait instead of killing the run. GalaSilver widget, prize checking, wheel alerts, remembered filters. On store product pages it adds GG.deals and PCGamingWiki title-search buttons. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -50,7 +50,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.8.4';
+    const SCRIPT_VERSION = '1.9.0';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     // La advertencia de automatizacion solo aplica al modulo de giveaways. En la
     // tienda este script no automatiza nada —pone dos enlaces— y avisar ahi de un
@@ -372,7 +372,7 @@
                 '• El botón ✕ de cada tarjeta oculta ese giveaway (solo en tu navegador), en la esquina opuesta al ＋ o al badge ⚠×N. "Mostrar ocultos por mí" los devuelve atenuados para sacarlos de la lista con ↺, y "Limpiar ocultos (N)" la vacía de golpe.',
                 '• La lista de ocultos se limpia sola: cada oculto se va cuando su giveaway termina, calculado con el "N days left" de la propia tarjeta. No hace falta vaciarla a mano para que no engorde.',
                 '▸ Fichas de la tienda',
-                '• En las páginas de producto (juegos, DLC y packs) añade dos botones bajo "Add to Cart": GG.deals busca el título en su catálogo, sin filtro de tienda ni de DRM, y PCGamingWiki lo busca para compatibilidad y arreglos. Los dos buscan por nombre, así que pueden no acertar; cada uno lo dice en su tooltip.',
+                '• En las fichas de producto (juegos, DLC y paquetes) añade dos botones bajo "Añadir al carrito": GG.deals busca el título en su catálogo, sin filtro de tienda ni de DRM, y PCGamingWiki busca compatibilidad y arreglos — sin el sufijo de edición y, en un DLC, por el juego base que la propia ficha declara, que es donde PCGamingWiki lo documenta. Los dos buscan por nombre, así que pueden no acertar; cada uno lo dice en su tooltip.',
                 '• Ahí no corre nada más del script: ni cola, ni automatización, ni advertencias. Solo los dos enlaces.',
                 'Todo se procesa en tu navegador; no se envían datos a terceros.'
             ]
@@ -411,7 +411,7 @@
                 '• The ✕ button on each card hides that giveaway (in your browser only), in the corner opposite the ＋ or the ⚠×N badge. "Show the ones I hid" brings them back dimmed so you can take them off the list with ↺, and "Clear hidden (N)" empties it in one go.',
                 '• The hidden list cleans itself up: each entry drops off when its giveaway ends, worked out from the card\'s own "N days left". You never have to empty it by hand to keep it from growing.',
                 '▸ Store product pages',
-                '• On product pages (games, DLC and packs) it adds two buttons under "Add to Cart": GG.deals searches the title in its catalogue, with no store or DRM filter, and PCGamingWiki searches it for compatibility and fixes. Both are title searches, so they can miss; each says so in its tooltip.',
+                '• On product pages (games, DLC and packs) it adds two buttons under "Add to Cart": GG.deals searches the title in its catalogue, with no store or DRM filter, and PCGamingWiki searches for compatibility and fixes — without the edition suffix and, on a DLC, by the base game the page itself declares, which is where PCGamingWiki documents it. Both are name searches, so they can miss; each says so in its tooltip.',
                 '• Nothing else from the script runs there: no queue, no automation, no warnings. Just the two links.',
                 'Everything runs in your browser; no data is sent to third parties.'
             ]
@@ -4714,6 +4714,16 @@
     // titulo solo estorban. Hay UN solo elemento con este atributo por ficha.
     const STORE_PROD_TITLE_SELECTOR = '[data-prod-title]';
     const STORE_H1_SELECTOR = '.store-product-header h1, h1';
+    // Juego base de un DLC. PCGamingWiki no tiene articulo por DLC —los documenta
+    // dentro del juego al que pertenecen—, asi que buscar el nombre del DLC no
+    // acierta nunca. IndieGala lo dice en la caja azul de la columna, con el nombre
+    // ya enlazado a su propia ficha:
+    //   <div class="store-product-contents-aside-dlc bg-gradient-blue"><h4>DLC</h4>
+    //     <p>This content requires the base product
+    //        <a href="/store/game/doom-eternal/782330">DOOM Eternal</a>
+    //        in order to play</p></div>
+    // Solo se toma el enlace: el texto de alrededor es la frase, no el nombre.
+    const STORE_DLC_BASE_SELECTOR = '.store-product-contents-aside-dlc a[href*="/store/game/"]';
     // Cola que IndieGala añade en <title> y og:title:
     // "<Nombre> <DRM> | Buy Cheap <Nombre> PC Game - Indiegala". El grupo del
     // medio es el nombre ya sin el sufijo de DRM, y es el ultimo recurso.
@@ -4736,6 +4746,10 @@
     const GGDEALS_SEARCH_URL = 'https://gg.deals/games/?title=';
 
     const PCGW_SEARCH_URL = 'https://www.pcgamingwiki.com/w/index.php';
+    // Sufijos de empaquetado que PCGamingWiki no usa: documenta el juego base y no
+    // tiene páginas por edición. "Definitive", "Anniversary", "Remastered" y "Game
+    // of the Year" NO se tocan: ahí sí suelen ser lanzamientos con página propia.
+    const STORE_SKU_EDITION_REGEX = /[\s:–—-]+(?:digital\s+)?(?:standard|deluxe|premium|ultimate|gold|platinum|complete|collector'?s|founder'?s)\s+edition\s*$/i;
 
     // Icono de GG.deals: favicon remoto (su CDN permite el hotlink). Si el CSP de
     // IndieGala lo bloqueara, el onerror lo quita y queda solo la etiqueta.
@@ -4793,6 +4807,27 @@
      */
     function normalizeForGgDeals(title) {
         return title.normalize('NFD').replace(STORE_DIACRITICS_REGEX, '');
+    }
+
+    /**
+     * Recorta lo que PCGamingWiki no indexa: los sufijos de edición. Si el recorte
+     * dejara la cadena vacía —un producto llamado solo "Deluxe Edition"— se queda
+     * el título entero, que es peor buscar que nada.
+     * @param {string} title - Título del producto.
+     * @returns {string} Título sin el sufijo de edición.
+     */
+    function pcgwSearchTitle(title) {
+        return title.replace(STORE_SKU_EDITION_REGEX, '').trim() || title;
+    }
+
+    /**
+     * En una ficha de DLC, el nombre del juego al que pertenece.
+     * @returns {string} Nombre del juego base, o cadena vacia si la ficha no es un
+     *     DLC o no lo declara.
+     */
+    function getStoreBaseGameTitle() {
+        const name = document.querySelector(STORE_DLC_BASE_SELECTOR)?.textContent || '';
+        return name.replace(STORE_TRADEMARK_REGEX, '').replace(/\s+/g, ' ').trim();
     }
 
     /**
@@ -4883,7 +4918,8 @@
         box.appendChild(createStoreLinkButton({
             cls: 'ig-store-pcgw',
             label: 'PCGamingWiki',
-            url: `${PCGW_SEARCH_URL}?${new URLSearchParams({ search: title })}`,
+            // En un DLC manda el juego base; si la ficha no lo declara, su propio nombre.
+            url: `${PCGW_SEARCH_URL}?${new URLSearchParams({ search: pcgwSearchTitle(getStoreBaseGameTitle() || title) })}`,
             iconSvg: PCGW_ICON_SVG,
             tooltip: T.storePcgwTip
         }));
