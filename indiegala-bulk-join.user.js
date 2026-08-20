@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Indiegala Bulk Tools (giveaway ticket queue + store links)
 // @namespace    http://tampermonkey.net/
-// @version      1.9.0
-// @description  Unified ticket queue for Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another; add, remove and reorder mid-run, and tickets you cannot afford wait instead of killing the run. GalaSilver widget, prize checking, wheel alerts, remembered filters. On store product pages it adds GG.deals and PCGamingWiki title-search buttons. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban.
+// @version      1.10.0
+// @description  Unified ticket queue for Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another; add, remove and reorder mid-run, and tickets you cannot afford wait instead of killing the run. GalaSilver widget, prize checking, wheel alerts, remembered filters, every listing page in one. On store product pages it adds GG.deals and PCGamingWiki title-search buttons. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
 // @match        https://www.indiegala.com/library
@@ -50,7 +50,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.9.0';
+    const SCRIPT_VERSION = '1.10.0';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     // La advertencia de automatizacion solo aplica al modulo de giveaways. En la
     // tienda este script no automatiza nada —pone dos enlaces— y avisar ahi de un
@@ -191,6 +191,14 @@
             ignoredPruned: '🧹 Ocultos que ya terminaron, fuera de la lista ({n}).',
             widgetRememberFilters: 'Recordar filtros de búsqueda',
             widgetRememberFiltersTooltip: 'Guarda el orden, el filtro de nivel, el texto de búsqueda y la página actual, y los re-aplica al recargar. Se sobrescriben cuando los cambias. Si la página guardada ya no existe, vuelve a la 1.',
+            widgetLoadAll: 'Cargar todas las páginas',
+            widgetLoadAllTooltip: 'Trae a esta página el resto de las páginas del listado, respetando el orden y el filtro de nivel que tengas puestos: una petición por página, con pausa, y solo al propio Indiegala con tu sesión —lo mismo que pulsar en su paginación—. Las tarjetas llegan como las de aquí, así que la cola, el ⚠×N y el ✕ funcionan igual. Con la casilla puesta se hace solo en cada carga de la página, incluida la recarga que hace el vigilante de la ruleta. No se carga nada mientras haya ruleta por girar, mientras corra la cola, ni cuando estás viendo resultados de búsqueda (ahí Indiegala ya te los da todos de una vez). Como la página guardada deja de tener sentido con todo cargado, "Recordar filtros" no la reaplica mientras esto esté marcado.',
+            loadAllWorking: 'Trayendo página {i} de {n}…',
+            loadAllDone: '{pages} páginas en una · {n} sorteos',
+            loadAllNone: 'Una sola página: no hay más que traer',
+            loadAllFail: '⚠ Falló la página {n}',
+            loadAllWheel: 'En pausa: hay ruleta por girar',
+            loadAllBusy: 'En pausa: cola en curso',
             widgetMinimize: 'Minimizar widget',
             widgetRestore: 'Restaurar widget',
             queueMinimize: 'Minimizar cola',
@@ -308,6 +316,14 @@
             ignoredPruned: '🧹 Hidden giveaways that have ended, dropped from the list ({n}).',
             widgetRememberFilters: 'Remember search filters',
             widgetRememberFiltersTooltip: 'Saves the sort order, level filter, search text and current page, and re-applies them on reload. Overwritten whenever you change them. Falls back to page 1 if the saved page no longer exists.',
+            widgetLoadAll: 'Load every page',
+            widgetLoadAllTooltip: 'Pulls the rest of the listing\'s pages into this one, keeping the sort order and level filter you have set: one request per page, spaced out, and only to Indiegala itself with your session — the same thing clicking its pagination does. The cards arrive like the ones already here, so the queue, the ⚠×N and the ✕ work the same. With this ticked it happens on its own on every page load, including the reload the wheel watcher does. Nothing is fetched while there is a wheel to spin, while the queue is running, or while you are looking at search results (Indiegala already hands you all of those at once). Since a saved page makes no sense once everything is loaded, "Remember search filters" does not re-apply it while this is ticked.',
+            loadAllWorking: 'Fetching page {i} of {n}…',
+            loadAllDone: '{pages} pages in one · {n} giveaways',
+            loadAllNone: 'A single page: nothing else to fetch',
+            loadAllFail: '⚠ Page {n} failed',
+            loadAllWheel: 'On hold: there is a wheel to spin',
+            loadAllBusy: 'On hold: queue running',
             widgetMinimize: 'Minimize widget',
             widgetRestore: 'Restore widget',
             queueMinimize: 'Minimize queue',
@@ -369,12 +385,13 @@
                 '• Tras girar te dice el premio y recarga al cerrar tú el popup, para que el saldo quede al día. Nunca recarga con la cola corriendo ni con un diálogo abierto.',
                 '▸ Opciones del listado',
                 '• Recordar filtros de búsqueda (orden, nivel, texto y página), ocultar los giveaways en los que ya tienes boleto y elegir el idioma del script (es/en/Auto).',
+                '• "Cargar todas las páginas" trae a la que estás viendo el resto de las páginas del listado, con el orden y el filtro de nivel que tengas puestos. Las tarjetas llegan enteras, así que la cola, el ⚠×N y el ✕ funcionan igual en ellas. Con la casilla puesta se hace solo en cada carga de la página, y no carga nada mientras haya ruleta por girar, mientras corra la cola, ni sobre resultados de búsqueda —ahí Indiegala ya te los da todos de una vez—. Mientras está marcada, "Recordar filtros" deja de reaplicar la página guardada: con todas cargadas no significa nada. Cuando ya está todo dentro, los números de la paginación se pliegan —el total sigue a la vista—; si la carga se paró a medias, se quedan, que es cuando sirven.',
                 '• El botón ✕ de cada tarjeta oculta ese giveaway (solo en tu navegador), en la esquina opuesta al ＋ o al badge ⚠×N. "Mostrar ocultos por mí" los devuelve atenuados para sacarlos de la lista con ↺, y "Limpiar ocultos (N)" la vacía de golpe.',
                 '• La lista de ocultos se limpia sola: cada oculto se va cuando su giveaway termina, calculado con el "N days left" de la propia tarjeta. No hace falta vaciarla a mano para que no engorde.',
                 '▸ Fichas de la tienda',
                 '• En las fichas de producto (juegos, DLC y paquetes) añade dos botones bajo "Añadir al carrito": GG.deals busca el título en su catálogo, sin filtro de tienda ni de DRM, y PCGamingWiki busca compatibilidad y arreglos — sin el sufijo de edición y, en un DLC, por el juego base que la propia ficha declara, que es donde PCGamingWiki lo documenta. Los dos buscan por nombre, así que pueden no acertar; cada uno lo dice en su tooltip.',
                 '• Ahí no corre nada más del script: ni cola, ni automatización, ni advertencias. Solo los dos enlaces.',
-                'Todo se procesa en tu navegador; no se envían datos a terceros.'
+                'Todo se procesa en tu navegador y no se envían datos a terceros. Lo único que sale a la red son las páginas del propio listado, y solo si marcas "Cargar todas las páginas": una petición por página, con pausa, a Indiegala y con tu sesión, exactamente como pulsar en su paginación. Al autor no se le envía nada.'
             ]
         },
         en: {
@@ -408,12 +425,13 @@
                 '• After a spin it tells you the prize and reloads when you close the popup, so the balance is up to date. It never reloads while the queue runs or a dialog is open.',
                 '▸ Listing options',
                 '• Remember search filters (sort, level, text and page), hide giveaways you already entered and choose the script language (es/en/Auto).',
+                '• "Load every page" pulls the rest of the listing\'s pages into the one you are on, keeping the sort order and level filter you have set. The cards arrive whole, so the queue, the ⚠×N and the ✕ work the same on them. With the box ticked it happens on its own on every page load, and nothing is fetched while there is a wheel to spin, while the queue runs, or over search results — Indiegala already hands you all of those at once. While it is ticked, "Remember search filters" stops re-applying the saved page: with everything loaded it means nothing. Once everything is in, the pagination numbers fold away — the total stays visible —; if the load stopped halfway they stay, which is when they are useful.',
                 '• The ✕ button on each card hides that giveaway (in your browser only), in the corner opposite the ＋ or the ⚠×N badge. "Show the ones I hid" brings them back dimmed so you can take them off the list with ↺, and "Clear hidden (N)" empties it in one go.',
                 '• The hidden list cleans itself up: each entry drops off when its giveaway ends, worked out from the card\'s own "N days left". You never have to empty it by hand to keep it from growing.',
                 '▸ Store product pages',
                 '• On product pages (games, DLC and packs) it adds two buttons under "Add to Cart": GG.deals searches the title in its catalogue, with no store or DRM filter, and PCGamingWiki searches for compatibility and fixes — without the edition suffix and, on a DLC, by the base game the page itself declares, which is where PCGamingWiki documents it. Both are name searches, so they can miss; each says so in its tooltip.',
                 '• Nothing else from the script runs there: no queue, no automation, no warnings. Just the two links.',
-                'Everything runs in your browser; no data is sent to third parties.'
+                'Everything runs in your browser and no data is sent to third parties. The only thing that goes to the network is the listing\'s own pages, and only if you tick "Load every page": one request per page, spaced out, to Indiegala and with your session, exactly like clicking its pagination. Nothing at all is sent to the author.'
             ]
         }
     };
@@ -458,6 +476,7 @@
     //   queueMin        -> panel de cola minimizado
     //   rememberFilters -> recordar y reaplicar sort/level/busqueda al recargar
     //   filters         -> { sort, order, level, search, page } aplicados por el usuario
+    //   loadAllPages    -> traer a esta pagina el resto de las paginas del listado
     const SETTINGS_KEY = 'ig-bulk-settings';
     // gids de giveaways ganados ya anunciados (premios "vistos"), para no
     // re-notificar el mismo premio cada vez que se pulsa "Revisar premios".
@@ -492,6 +511,35 @@
     // el tooltip lo atribuye a los docs en vez de afirmarlo como dato propio.
     const GALASILVER_MAX = 240;
     const GALASILVER_PER_HOUR = 10;
+
+    // -------- Traer todas las paginas del listado --------
+    // Una peticion por pagina y con pausa. El listado es pequeno (verificado:
+    // 132 items en 7 paginas con "All levels", 57 en 3 con "Level 0") y el
+    // total viene escrito en la propia barra de paginacion, asi que no hay que
+    // tantear: se sabe cuantas son antes de pedir la primera.
+    const LOAD_ALL_DELAY_MS = 700;
+    // Tope de peticiones por pasada. No es un recorte del alcance —hoy el
+    // listado no llega ni a la mitad—, es el guardarrail para que un cambio en
+    // la paginacion del sitio no se convierta en cien peticiones.
+    const LOAD_ALL_MAX_PAGES = 20;
+    // Contenedor del listado paginado. Es el ambito de TODO lo que cuente o
+    // recorra tarjetas aqui, y no el documento: el carrusel de arriba viene
+    // CUATRO veces en el HTML (las variantes responsive #page-slider,
+    // -3-col, -2-col y -1-col) y sus giveaways estan tambien en el listado, asi
+    // que un querySelectorAll suelto cuenta el mismo giveaway hasta cinco veces.
+    const LISTING_SCOPE = '#ajax-contents-container .page-contents-list';
+    // Marca de "a esta lista ya le traje sus paginas". Vive en el nodo que el
+    // sitio reemplaza al paginar/ordenar/buscar, asi que se va sola cuando hay
+    // un listado nuevo que rellenar, sin tener que escuchar esos eventos.
+    const LOADED_ALL_ATTR = 'igLoadedAll';
+    // Pagina de la que salio cada celda, para insertar cada tanda en su sitio
+    // en vez de al final: con la pagina 3 delante, la 1 y la 2 tienen que
+    // quedar por encima o el listado sale desordenado.
+    const ITEM_PAGE_ATTR = 'igPage';
+    // Clase con la que se pliegan los números y las flechas de la paginación
+    // cuando ya está todo el listado dentro. Clase aparte y no `style.display`
+    // para que el sitio pueda recrear la barra sin heredar nada nuestro.
+    const PAG_FOLDED_CLASS = 'ig-pag-folded';
     const BULK_BTN_CLASS = 'ig-bulk-join-btn';
     const BULK_BADGE_CLASS = 'ig-bulk-join-badge';
     const QBTN_CLASS = 'ig-q-btn';
@@ -554,6 +602,21 @@
     // disparan las recargas AJAX de la reaplicacion.
     let filtersReady = false;
     let reapplyInProgress = false;
+
+    // Estado de la carga de paginas. null = no se ha intentado en esta lista.
+    // { running, pages, added, error, total } — se lee desde el widget para la
+    // linea de estado, asi que no vive dentro de la funcion que carga.
+    let loadAllState = null;
+    // La ruleta esta disponible (la firma del menu cambio). Lo pone
+    // checkWheelOnce() y lo unico que hace es frenar la carga de paginas: el
+    // vigilante va a recargar la pagina, asi que traerlas seria trabajo tirado.
+    //
+    // `wheelChecked` existe para no correr una carrera con eso: la carga espera
+    // a que la ruleta se haya comprobado una vez. Sin esto, la comprobacion
+    // (que aguarda a que el submenu exista) podia resolverse a mitad de la
+    // carga, y en vez de no pedir nada se pedian dos paginas y se cortaba.
+    let wheelAvailable = false;
+    let wheelChecked = false;
 
     // Saldo GalaSilver en memoria. Se inicializa desde el DOM (HTML cargado) la primera
     // vez que se consulta y se decrementa localmente tras cada join exitoso. Al recargar
@@ -624,6 +687,8 @@
             hideEntered: false, showIgnored: false, balanceMin: false, queueMin: false,
             // Recordar filtros de busqueda del listado (sort/level/texto).
             rememberFilters: false,
+            // Traer el resto de las paginas del listado a la que estas viendo.
+            loadAllPages: false,
             filters: { sort: 'expiry', order: 'asc', level: 'all', search: '', page: 1 }
         };
         try {
@@ -1581,6 +1646,15 @@
             }
             /* Misma linea, pero cuando informa un faltante: verde mentiria. */
             #${BALANCE_WIDGET_ID} .ig-bw-avail.ig-bw-short { color: #ffcf66; }
+            /* Estado de "cargar todas las paginas": azul cuando cuenta un exito
+               (o el progreso), ambar cuando cuenta un fallo o una pausa. El
+               margen negativo la pega a su casilla, para que se lea como parte
+               de ella y no como una linea suelta mas. */
+            #${BALANCE_WIDGET_ID} .ig-bw-loadall {
+                font-size: 11px; color: #80d8ff;
+                margin: -4px 0 8px; line-height: 1.3;
+            }
+            #${BALANCE_WIDGET_ID} .ig-bw-loadall.ig-bw-short { color: #ffcf66; }
             #${BALANCE_WIDGET_ID} .ig-bw-credit {
                 font-size: 12px; color: #80d8ff;
                 font-weight: bold; margin-bottom: 8px;
@@ -1637,6 +1711,11 @@
 
             /* Ocultar giveaways en los que ya tienes boleto (toggle persistente). */
             .ig-entered-hidden { display: none !important; }
+
+            /* Números y flechas de la paginación, plegados cuando ya está todo
+               el listado en la página. La celda del total NO lleva esta clase:
+               sigue diciendo la verdad. */
+            .${PAG_FOLDED_CLASS} { display: none !important; }
 
             /* Ocultados a mano con ✕. Clase aparte de .ig-entered-hidden para que
                los dos filtros no se pisen: cada pasada pone y quita solo la suya. */
@@ -3058,6 +3137,11 @@
                         <input type="checkbox" id="ig-bw-remember-filters">
                         <span>${T.widgetRememberFilters}</span>
                     </label>
+                    <label class="ig-bw-toggle" title="${escapeHtml(T.widgetLoadAllTooltip)}">
+                        <input type="checkbox" id="ig-bw-load-all">
+                        <span>${T.widgetLoadAll}</span>
+                    </label>
+                    <div class="ig-bw-loadall" id="ig-bw-load-all-status" style="display:none"></div>
                     <label class="ig-bw-toggle" title="${escapeHtml(T.widgetHideEnteredTooltip)}">
                         <input type="checkbox" id="ig-bw-hide-entered">
                         <span>${T.widgetHideEntered}</span>
@@ -3123,6 +3207,18 @@
                 saveSettings();
                 if (remChk.checked) { try { captureFilters(true); } catch (_) {} }
             });
+            // Toggle "Cargar todas las paginas". Al marcarla se trae YA, sin
+            // esperar a la siguiente carga de la pagina: quien la marca quiere
+            // ver el listado completo ahora. Al desmarcarla NO se quita lo ya
+            // traido —borrar de golpe filas que estas mirando es peor que
+            // dejarlas—; se van con la siguiente recarga.
+            const loadAllChk = w.querySelector('#ig-bw-load-all');
+            loadAllChk.addEventListener('change', () => {
+                settings.loadAllPages = loadAllChk.checked;
+                saveSettings();
+                if (loadAllChk.checked) { try { maybeLoadAllPages(); } catch (_) {} }
+                else renderBalanceWidget();
+            });
             // Minimizar / restaurar el widget (estado persistente).
             w.querySelector('#ig-bw-min').addEventListener('click', (e) => {
                 e.preventDefault();
@@ -3136,6 +3232,19 @@
         if (hideChk) hideChk.checked = !!settings.hideEntered;
         const remChk = w.querySelector('#ig-bw-remember-filters');
         if (remChk) remChk.checked = !!settings.rememberFilters;
+        const loadAllChk = w.querySelector('#ig-bw-load-all');
+        if (loadAllChk) loadAllChk.checked = !!settings.loadAllPages;
+        const loadAllLine = w.querySelector('#ig-bw-load-all-status');
+        if (loadAllLine) {
+            const txt = loadAllStatus();
+            loadAllLine.textContent = txt;
+            loadAllLine.style.display = txt ? '' : 'none';
+            // Ambar cuando la linea no cuenta un exito: un fallo o una pausa en
+            // el color de "todo bien" se lee como que fue bien.
+            const warn = !!(loadAllState && loadAllState.error != null)
+                || running || isUserBusy() || wheelAvailable;
+            loadAllLine.classList.toggle('ig-bw-short', warn);
+        }
         refreshIgnoredWidget();
         applyBalanceMinState(w);
         const bal = getCurrentBalance();
@@ -3577,9 +3686,14 @@
     // vuelva exactamente al HTML hardcodeado relanzaria la alerta en cada
     // recarga hasta el dia siguiente.
     async function checkWheelOnce() {
+        // `wheelChecked` se marca en TODAS las salidas, tambien en las que no
+        // averiguan nada: es "ya no hay que esperarme", no "hay ruleta". Si solo
+        // se marcara en la salida buena, un submenu que no llega dejaria la
+        // carga de paginas esperando para siempre.
         const el = await waitForElement(WHEEL_SELECTOR, 15000);
         if (!el) {
             console.log('[IG-BulkTools] wheel: elemento no encontrado, omito chequeo.');
+            wheelChecked = true;
             return;
         }
         const sig = normalizeHtmlSig(el.outerHTML);
@@ -3590,12 +3704,18 @@
             st.baselineSig = (sig === WHEEL_BASELINE_SIG) ? null : sig;
             saveWheelState(st);
             console.log('[IG-BulkTools] wheel: firma base aprendida tras giro:', st.baselineSig || '(hardcodeada)');
+            wheelChecked = true;
             return;
         }
 
         const baseline = st.baselineSig || WHEEL_BASELINE_SIG;
         const changed = sig !== baseline;
         console.log('[IG-BulkTools] wheel sig:', sig, '| baseline:', baseline, '| changed:', changed);
+        // Con ruleta por girar no se traen paginas: el vigilante va a recargar
+        // en cuanto la gires (watchWheelSpin) o pasado su intervalo, y lo
+        // traido se lo lleva la recarga. Regla del usuario, no una suposicion.
+        wheelAvailable = changed;
+        wheelChecked = true;
         if (changed) {
             try { (typeof unsafeWindow !== 'undefined' && unsafeWindow.alert ? unsafeWindow.alert : window.alert)(T.wheelAvailableAlert); }
             catch (_) { try { window.alert(T.wheelAvailableAlert); } catch (__) {} }
@@ -3783,6 +3903,13 @@
         startWheelWatcher._started = true;
 
         try { await checkWheelOnce(); } catch (e) { console.error('[IG-BulkTools] checkWheelOnce:', e); }
+        // Ya se sabe si hay ruleta: si no la hay, este es el momento en que la
+        // carga de paginas puede arrancar (la esperaba). Y si la hay, hay que
+        // repintar el widget para DECIRLO: el widget se dibujo antes de saberlo,
+        // asi que sin esto su linea de estado se queda muda y la casilla parece
+        // no hacer nada. Salio en las pruebas, no despues.
+        try { maybeLoadAllPages(); } catch (e) { console.error('[IG-BulkTools] maybeLoadAllPages:', e); }
+        try { renderBalanceWidget(); } catch (e) { /* sin widget que repintar */ }
 
         await sleep(CFG.wheelCheckIntervalMs);
         while (running || isUserBusy()) {
@@ -4612,7 +4739,10 @@
             // pagina 1, y la URL AJAX de paginacion no lleva termino de busqueda).
             // Se aplica al final de sort/level para que la barra ya refleje esos
             // filtros al copiar el href.
-            if (!want.search && (want.page || 1) > 1) {
+            // Y tampoco cuando esta puesto "cargar todas las paginas": con
+            // todas cargadas la pagina guardada no significa nada, y volver a
+            // la 3 solo haria que la carga empezara por otro sitio.
+            if (!want.search && !settings.loadAllPages && (want.page || 1) > 1) {
                 await applyPage(want.page);
             }
 
@@ -4647,6 +4777,303 @@
         });
     }
 
+    // =============================================
+    // TRAER TODAS LAS PAGINAS DEL LISTADO
+    // =============================================
+    // Indiegala pagina por AJAX: /giveaways/ajax/<pag>/<sort>/<orden>/level/<nivel>
+    // devuelve {status, html, current_page, current_sort, current_sort_order,
+    // current_level}, y el html es el .page-contents-list completo con su barra
+    // de paginacion. Esto pide las paginas que faltan y mete sus celdas en la
+    // que tienes delante, respetando el orden y el nivel que tengas puestos
+    // (van dentro de la URL, que se copia de la propia barra).
+    //
+    // Las tarjetas llegan EXACTAMENTE como las de aqui. Verificado, y no por
+    // parecido: comparando gid a gid, en el mismo instante, la tarjeta viva
+    // contra la traida por la misma URL —las 20 coincidieron—. Asi que una fila
+    // traida es indistinguible de una nativa y NO hay que completarla ni
+    // marcarla: injectListing le pone su ＋ / ⚠×N / ✕ y applyHideEntered la
+    // juzga con la misma regla, acertando por el mismo motivo.
+    //
+    // Lo que el servidor no manda —ni aqui ni en el listado propio— es el
+    // control de compra de los giveaways de tu nivel en los que ya tienes
+    // boleto: esos llegan con el hueco vacio, y eso es justo lo que significa.
+    // NO es carga diferida: se descartaron una por una las tres explicaciones
+    // que lo parecian —el POST con CSRF (405, el endpoint es solo GET), el
+    // success del cargador del sitio (un .html() y nada mas) y asyncImgLoader
+    // (el unico <script> del fragmento, y solo toca imagenes)—.
+    function listingList() {
+        return document.querySelector(LISTING_SCOPE);
+    }
+
+    function listingRow(list) {
+        const l = list || listingList();
+        return l ? l.querySelector('.items-list-row') : null;
+    }
+
+    function listingCells() {
+        const l = listingList();
+        return l ? Array.from(l.querySelectorAll('.items-list-col')) : [];
+    }
+
+    function cellGid(cell) {
+        const item = cell && cell.querySelector('.items-list-item');
+        return item ? getItemGid(item) : null;
+    }
+
+    // Resultados de busqueda a la vista: el sitio esconde el listado paginado
+    // (#ajax-contents-container en display:none) y pinta otro .page-contents-list
+    // dentro de .page-contents-ajax-results. Ahi no se trae nada, por dos
+    // motivos: no es el listado que se recorre, y la busqueda ya devuelve todos
+    // sus resultados en una sola respuesta, sin paginar.
+    function isSearchActive() {
+        const cont = document.getElementById('ajax-contents-container');
+        if (cont && window.getComputedStyle(cont).display === 'none') return true;
+        const res = document.querySelector('.page-contents-ajax-results');
+        return !!(res && window.getComputedStyle(res).display !== 'none');
+    }
+
+    // Ultima pagina, leida de la propia barra: el ancla de "ir al final" (la
+    // doble flecha) apunta a ella. Es mejor que dividir el total entre 20, que
+    // da por supuesto el tamano de pagina. Si no hay doble flecha —una sola
+    // pagina, o estas en la ultima y el sitio la omite— vale el numero mas alto
+    // que aparezca; y se leen solo los enlaces y el .current, nunca el texto de
+    // la celda del total, que dice "132 items" y se colaria como pagina 132.
+    function lastListPage() {
+        const dbl = document.querySelector('.pagination a.prev-next i.fa-angle-double-right');
+        const a = dbl ? dbl.closest('a') : null;
+        const m = a && (a.getAttribute('href') || '').match(/\/giveaways\/ajax\/(\d+)\//);
+        if (m) return parseInt(m[1], 10);
+        let top = 0;
+        document.querySelectorAll('.pagination .page-link-cont a, .pagination .page-link-cont .current').forEach(el => {
+            const t = (el.textContent || '').trim();
+            if (!/^\d+$/.test(t)) return;
+            const n = parseInt(t, 10);
+            if (n > top) top = n;
+        });
+        return top || null;
+    }
+
+    // Lo que el sitio dice tener con estos filtros ("132 items"). Es una
+    // afirmacion suya y solo se muestra: nada del recorrido depende de ella.
+    function listTotalItems() {
+        const cont = document.querySelector('.pagination .page-link-cont');
+        const m = cont && (cont.textContent || '').match(/(\d[\d.,]*)/);
+        return m ? parseInt(m[1].replace(/[.,]/g, ''), 10) : null;
+    }
+
+    // La peticion se hace como la hace el sitio: mismo GET a la misma URL, con
+    // la sesion y la cabecera de XHR. Lanza si algo no cuadra, y el que llama
+    // decide; devolver null en silencio dejaria un listado a medias sin decirlo.
+    async function fetchListPage(page) {
+        const url = pageUrlFromDom(page);
+        if (!url) return null;
+        const res = await fetch(url, {
+            method: 'GET',
+            credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (!data || data.status !== 'ok' || typeof data.html !== 'string') throw new Error('respuesta inesperada');
+        // current_page dice QUE pagina sirvio el servidor. Si no es la pedida se
+        // descarta: mejor una pagina de menos que veinte filas repetidas de otra.
+        if (data.current_page != null && parseInt(data.current_page, 10) !== page) {
+            throw new Error('sirvio la pagina ' + data.current_page + ', se pidio la ' + page);
+        }
+        return new DOMParser().parseFromString(data.html, 'text/html');
+    }
+
+    // Mete las celdas de `page` en su sitio: detras de la ultima que venga de
+    // una pagina anterior. Con la pagina 3 delante, la 1 y la 2 tienen que
+    // quedar por encima, no al final.
+    function insertPageCells(doc, page, seen, row) {
+        if (!row) return 0;
+        let anchor = null;
+        Array.from(row.children).forEach(cell => {
+            const p = parseInt(cell.dataset[ITEM_PAGE_ATTR], 10);
+            if (!isNaN(p) && p < page) anchor = cell;
+        });
+        let added = 0;
+        doc.querySelectorAll('.page-contents-list .items-list-col').forEach(cell => {
+            const gid = cellGid(cell);
+            // Sin gid no hay forma de saber si ya esta: se descarta, que es
+            // mejor que duplicarla.
+            if (!gid || seen.has(gid)) return;
+            seen.add(gid);
+            const node = document.importNode(cell, true);
+            node.dataset[ITEM_PAGE_ATTR] = String(page);
+            if (anchor && anchor.parentNode === row) row.insertBefore(node, anchor.nextSibling);
+            else row.insertBefore(node, row.firstChild);
+            anchor = node;
+            added++;
+        });
+        return added;
+    }
+
+    // Las imagenes traidas vienen con class="display-none" y SIN src: el sitio
+    // guarda la URL en data-img-src y las revela con asyncImgLoader, que es el
+    // <script> con el que cierra cada fragmento y que jQuery ejecuta al
+    // insertarlo con .html(). Aqui los nodos se insertan a mano, asi que ese
+    // script no corre y hay que llamarlo. Se prefiere el del sitio; el respaldo
+    // hace lo mismo por si algun dia deja de ser global.
+    function revealListingImages() {
+        try {
+            const w = uw();
+            if (typeof w.asyncImgLoader === 'function') {
+                w.asyncImgLoader('.items-list-item figure img', LISTING_SCOPE);
+                return;
+            }
+        } catch (e) { /* seguimos con el respaldo */ }
+        document.querySelectorAll(LISTING_SCOPE + ' .items-list-item figure img[data-img-src]').forEach(img => {
+            if (!img.getAttribute('src')) img.setAttribute('src', img.getAttribute('data-img-src'));
+            img.classList.remove('display-none');
+            img.style.display = 'inline';
+        });
+    }
+
+    // Texto de la linea de estado del widget. Cadena vacia = no hay nada que
+    // decir. Los dos "en pausa" van ANTES de mirar el estado de la carga: son
+    // el motivo por el que no hay carga que contar.
+    function loadAllStatus() {
+        if (!settings.loadAllPages || !isListingRoot()) return '';
+        // Con una búsqueda delante, el resultado de la carga anterior es de otro
+        // listado: callar es más honesto que dejar «7 páginas en una» sobre unos
+        // resultados de búsqueda que no se cargaron por páginas.
+        if (isSearchActive()) return '';
+        if (running || isUserBusy()) return T.loadAllBusy;
+        if (wheelAvailable) return T.loadAllWheel;
+        if (!loadAllState) return '';
+        if (loadAllState.running) {
+            return fmt(T.loadAllWorking, { i: loadAllState.i || 1, n: loadAllState.of || 1 });
+        }
+        if (loadAllState.error != null) return fmt(T.loadAllFail, { n: loadAllState.error });
+        if (!loadAllState.pages) return T.loadAllNone;
+        // pages + 1: las traidas mas la que ya tenias delante.
+        return fmt(T.loadAllDone, { pages: loadAllState.pages + 1, n: listingCells().length });
+    }
+
+    // Todo dentro de verdad: acabó, sin fallo, y con TODAS las páginas que se
+    // propuso. Es lo que separa "está completo" de "se paró a medias", que se
+    // parecen mucho desde fuera y no se pueden tratar igual.
+    function loadAllComplete() {
+        return !!(loadAllState && !loadAllState.running && loadAllState.error == null
+            && loadAllState.of > 0 && loadAllState.pages === loadAllState.of);
+    }
+
+    // La barra de paginación se pliega en DOS MITADES, no de golpe, y es la
+    // misma distinción que en el script de SteamGifts:
+    //
+    //   - La celda del total ("132 items") es una AFIRMACIÓN, y aquí sigue
+    //     siendo verdad —más que antes, porque los 132 están delante—. Se queda.
+    //   - Los números y las flechas son una HERRAMIENTA, y dejan de servir solo
+    //     cuando no falta ninguna página. Si la carga se paró a medias (un
+    //     fallo, la ruleta, la cola), la barra se queda para poder seguir a
+    //     mano; esconderla ahí sería quitar la salida justo cuando hace falta.
+    //
+    // La condición mira la marca de la lista y no solo el estado: cuando el
+    // sitio recrea el listado, la marca se va con él, así que la barra vuelve
+    // sola sin tener que escuchar ningún evento.
+    function foldPagination() {
+        const list = listingList();
+        const fold = !!(list && list.dataset[LOADED_ALL_ATTR] === '1' && loadAllComplete());
+        document.querySelectorAll('#ajax-contents-container .pagination .page-link-cont').forEach(cont => {
+            // Herramienta = lo que lleva un enlace o marca la página actual. La
+            // celda del total no lleva ninguno de los dos.
+            if (!cont.querySelector('a, .current')) return;
+            cont.classList.toggle(PAG_FOLDED_CLASS, fold);
+        });
+    }
+
+    async function loadAllPages() {
+        const list = listingList();
+        const row = listingRow(list);
+        if (!list || !row) return;
+        const current = readCurrentPage() || 1;
+        const last = lastListPage();
+
+        // Marcar la lista ANTES de pedir nada. El observador dispara injectAll
+        // varias veces mientras entran las celdas, y sin la marca cada pasada
+        // arrancaria otra carga sobre la misma lista.
+        list.dataset[LOADED_ALL_ATTR] = '1';
+        Array.from(row.children).forEach(cell => { cell.dataset[ITEM_PAGE_ATTR] = String(current); });
+
+        if (!last || last <= 1) {
+            loadAllState = { running: false, pages: 0, added: 0, error: null, total: listTotalItems(), i: 0, of: 0 };
+            renderBalanceWidget();
+            return;
+        }
+
+        const pages = [];
+        for (let p = 1; p <= last && pages.length < LOAD_ALL_MAX_PAGES; p++) {
+            if (p !== current) pages.push(p);
+        }
+        const seen = new Set();
+        listingCells().forEach(cell => {
+            const gid = cellGid(cell);
+            if (gid) seen.add(gid);
+        });
+
+        loadAllState = { running: true, pages: 0, added: 0, error: null, total: listTotalItems(), i: 0, of: pages.length };
+        renderBalanceWidget();
+
+        for (let i = 0; i < pages.length; i++) {
+            // La pausa va ANTES de cada peticion, incluida la primera: esto
+            // arranca solo al abrir la pagina, que es cuando el navegador
+            // todavia esta trayendo lo del sitio.
+            await sleep(LOAD_ALL_DELAY_MS);
+            // Las mismas guardas que al arrancar, pero en cada vuelta: una
+            // pasada dura segundos, y en ese rato puedes darle a Ejecutar o
+            // aparecer la ruleta. Se para donde este y no se deshace lo traido.
+            if (running || isUserBusy() || wheelAvailable) break;
+            // Y que la lista siga siendo LA MISMA. Si mientras pedíamos pasaste
+            // de página, ordenaste u buscaste, el sitio reemplazó este nodo: lo
+            // traído ya no pertenece a lo que hay delante, así que se para y
+            // deja que la pasada siguiente empiece de cero sobre la lista nueva.
+            if (!list.isConnected) break;
+            loadAllState.i = i + 1;
+            renderBalanceWidget();
+            let doc = null;
+            try {
+                doc = await fetchListPage(pages[i]);
+            } catch (e) {
+                console.error('[IG-BulkTools] loadAllPages, pagina ' + pages[i] + ':', e);
+                loadAllState.error = pages[i];
+                break;
+            }
+            if (!doc) break;
+            loadAllState.added += insertPageCells(doc, pages[i], seen, row);
+            loadAllState.pages++;
+            revealListingImages();
+            injectAll();
+        }
+        loadAllState.running = false;
+        loadAllState.i = 0;
+        revealListingImages();
+        injectAll();
+    }
+
+    // Guardas, en orden de "por que no toca ahora". Se llama desde injectAll, o
+    // sea en cada pasada del observador, asi que tiene que ser barata y no
+    // arrancar dos veces sobre la misma lista.
+    function maybeLoadAllPages() {
+        if (!settings.loadAllPages) return;
+        if (!isListingRoot()) return;
+        if (loadAllState && loadAllState.running) return;
+        // Los filtros guardados se reaplican disparando recargas del listado.
+        // Traer paginas antes de que eso acabe seria traerlas para el filtro
+        // viejo y verlas desaparecer con la siguiente recarga.
+        if (!filtersReady || reapplyInProgress) return;
+        if (isSearchActive()) return;
+        if (running || isUserBusy()) return;
+        if (!wheelChecked || wheelAvailable) return;
+        const list = listingList();
+        if (!list || list.dataset[LOADED_ALL_ATTR] === '1') return;
+        // Listado vacio: o no ha llegado, o no hay resultados. En los dos casos
+        // no hay ancla donde insertar y la marca se pondria en falso.
+        if (!listingCells().length) return;
+        loadAllPages();
+    }
+
     function injectAll() {
         try { injectStyles(); } catch (e) {}
         try { injectCardDetail(); } catch (e) { console.error('[IG-BulkTools] injectCardDetail:', e); }
@@ -4656,6 +5083,16 @@
         try { bindSearchCapture(); } catch (e) {}
         try { captureFilters(); } catch (e) { console.error('[IG-BulkTools] captureFilters:', e); }
         try { renderQueuePanel(); } catch (e) { console.error('[IG-BulkTools] renderQueuePanel:', e); }
+        // Al final del todo: si toca, arranca la carga de las paginas que
+        // faltan. Va aqui y no en boot() porque el listado llega por AJAX y
+        // puede cambiar (paginar, ordenar, salir de una busqueda); esta es la
+        // pasada que se ejecuta en cada uno de esos casos.
+        try { maybeLoadAllPages(); } catch (e) { console.error('[IG-BulkTools] maybeLoadAllPages:', e); }
+        // Detrás de la carga, y en cada pasada: la barra de paginación se
+        // pliega si ya está todo dentro, y vuelve sola si el sitio recrea el
+        // listado. Va aquí y no dentro de la carga para que también se aplique
+        // en las pasadas que el observador dispara por su cuenta.
+        try { foldPagination(); } catch (e) { console.error('[IG-BulkTools] foldPagination:', e); }
         // Asegurar que botones recien inyectados reflejen el estado de saldo (deshabilitar
         // los ＋ cuando bal=0). Tambien resincroniza con el DOM si Indiegala actualizo iS.
         try { getCurrentBalance(); refreshQueueButtonsState(); refreshBulkBadges(); renderBalanceWidget(); } catch (e) {}
@@ -5004,7 +5441,14 @@
         startObserver();
         // Reaplicar filtros guardados (sort/level/busqueda) tras el render inicial.
         // Habilita la captura de cambios posteriores (marca filtersReady al terminar).
-        reapplyFilters();
+        //
+        // Y al acabar, el intento de cargar las paginas que faltan. Va colgado
+        // de aqui y no solo de injectAll porque injectAll ya corrio antes (desde
+        // startObserver) con filtersReady todavia en false, y si la pagina no
+        // muta mas, nadie volveria a pasar por ahi.
+        reapplyFilters().then(() => {
+            try { maybeLoadAllPages(); } catch (e) { console.error('[IG-BulkTools] maybeLoadAllPages:', e); }
+        });
         // Vigilante de Wheel of Fortune (se auto-limita a /giveaways listado raiz).
         startWheelWatcher();
         // Detector de giro: recarga tras revelarse el premio (idem, listado raiz).

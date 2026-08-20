@@ -1,0 +1,60 @@
+# Arnés de regresión
+
+Arranca **el userscript de verdad** dentro de jsdom, sobre un DOM de `/giveaways`, y comprueba
+lo que dejó hecho: **qué peticiones salieron**, en qué orden quedaron los giveaways del
+listado, qué botones aparecieron y qué dice la línea de estado del widget. Se miran efectos
+observables, los que ve el usuario, no funciones internas: así un refactor no rompe los tests
+y un cambio de comportamiento sí.
+
+No hay framework. Cada fichero se ejecuta solo y acaba en `TODO OK` o `FALLOS: …`.
+
+## Correr
+
+```sh
+cd tests
+npm install          # solo jsdom
+node test-cargar-paginas.js
+node test-cargar-paginas-guardas.js
+node test-cargar-paginas-fallos.js
+```
+
+## Control negativo
+
+Una prueba que pasa igual con el código viejo no mide lo que dice. `IG_SCRIPT` apunta el arnés
+a otra copia del script:
+
+```sh
+git show HEAD:indiegala-bulk-join.user.js > /tmp/anterior.user.js
+IG_SCRIPT=/tmp/anterior.user.js node test-cargar-paginas.js
+```
+
+Contra el 1.9.0 (antes de «cargar todas las páginas») cae todo lo que describe la función
+nueva y **pasan** los casos que describen lo que no cambia —la casilla apagada, el listado de
+una sola página, la búsqueda delante—, que es exactamente lo que tienen que hacer.
+
+## Qué cubre cada uno
+
+| Test | Qué vigila |
+|---|---|
+| `test-cargar-paginas.js` | El caso central: una sola petición por página, sin duplicados, y el listado en el orden correcto. Incluye **entrar por la página 3**, donde la 1 y la 2 tienen que quedar por encima y no al final. Comprueba también que la petición lleva la sesión y la cabecera de XHR, que las imágenes traídas se revelan (con el `asyncImgLoader` del sitio y sin él) y que los ＋ / ⚠×N / ✕ salen en las filas traídas igual que en las nativas. |
+| `test-cargar-paginas-guardas.js` | Los casos en los que **no** se pide nada: ruleta por girar, cola en curso, resultados de búsqueda delante, casilla apagada. Y la pareja positivo/negativo de la página guardada: con la casilla puesta no se reaplica, con la casilla quitada sí. |
+| `test-cargar-paginas-fallos.js` | Que un fallo **pare y se diga**: HTTP 500 en la primera y en la segunda petición, el servidor sirviendo una página distinta de la pedida, y un `status` que no es `ok`. En los cuatro, sin filas repetidas y con el aviso a la vista. |
+| `test-cargar-paginas-paginacion.js` | Que la barra de paginación se pliegue **solo cuando no falta ninguna página**, y que la celda del total («132 items») se quede siempre. Los cuatro casos que NO deben plegarla —casilla apagada, parada por un fallo, parada por la ruleta, listado de una sola página— pesan más que el que sí: plegarla al pararse a medias quitaría la única salida justo cuando hace falta. Tarda el doble que los demás porque cada caso corre dos veces, una para saber cuántas celdas pinta el fixture. |
+
+## Lo que el arnés reproduce a propósito
+
+- **El carrusel viene cuatro veces** (`#page-slider-1..4`, las variantes responsive) y repite
+  giveaways del listado. Es la trampa en la que cae un `querySelectorAll` sin ámbito: el mismo
+  giveaway se cuenta hasta cinco veces. Los conteos del arnés son siempre dentro de
+  `#ajax-contents-container .page-contents-list`.
+- **El CSS del sitio, en lo que el script da por hecho.** `.display-none { display: none }` no
+  es decoración: sin esa regla, jsdom da `display:block` a los contenedores que el sitio tiene
+  ocultos y `isSearchActive()` cree que hay una búsqueda delante **siempre**, con lo que no se
+  carga nada y los tests salen en verde por el motivo equivocado. Pasó al escribirlos.
+- **Las tarjetas de nivel 0 llegan sin control de compra**, que es lo que sirve Indiegala para
+  los giveaways de tu nivel en los que ya tienes boleto. Por eso el número de ＋ esperado es
+  menor que el de tarjetas: es el estado real, no un fixture incompleto.
+- **`asyncImgLoader` no se define salvo en un caso.** Las imágenes llegan con
+  `class="display-none"` y sin `src`; en el sitio las revela ese `<script>` que cierra cada
+  fragmento, y aquí se prueban los dos caminos: el del sitio cuando existe, y el respaldo del
+  script cuando no.
