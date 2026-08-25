@@ -16,6 +16,7 @@ npm install          # solo jsdom
 node test-cargar-paginas.js
 node test-cargar-paginas-guardas.js
 node test-cargar-paginas-fallos.js
+node test-aviso-ruleta.js
 ```
 
 ## Control negativo
@@ -39,6 +40,7 @@ una sola página, la búsqueda delante—, que es exactamente lo que tienen que 
 | `test-cargar-paginas.js` | El caso central: una sola petición por página, sin duplicados, y el listado en el orden correcto. Incluye **entrar por la página 3**, donde la 1 y la 2 tienen que quedar por encima y no al final. Comprueba también que la petición lleva la sesión y la cabecera de XHR, que las imágenes traídas se revelan (con el `asyncImgLoader` del sitio y sin él) y que los ＋ / ⚠×N / ✕ salen en las filas traídas igual que en las nativas. |
 | `test-cargar-paginas-guardas.js` | Los casos en los que **no** se pide nada: ruleta por girar, cola en curso, resultados de búsqueda delante, casilla apagada. Y la pareja positivo/negativo de la página guardada: con la casilla puesta no se reaplica, con la casilla quitada sí. |
 | `test-cargar-paginas-fallos.js` | Que un fallo **pare y se diga**: HTTP 500 en la primera y en la segunda petición, el servidor sirviendo una página distinta de la pedida, y un `status` que no es `ok`. En los cuatro, sin filas repetidas y con el aviso a la vista. |
+| `test-aviso-ruleta.js` | Que el aviso de «hay ruleta por girar» **se vea sin tener la pestaña delante**: la marca 🎡 al principio del `<title>`, el toast que no se va solo, y **ningún `alert()`** (el arnés captura las llamadas en vez de dejarlas estallar, para poder afirmar que no las hay). Incluye el control negativo —sin ruleta, título intacto y ningún toast— y el caso en el que **el sitio reescribe el título** por su cuenta, donde la marca tiene que volver encima del título nuevo. El sonido no se prueba: jsdom no reproduce nada, así que cualquier aserción sobre él mediría el arnés. |
 | `test-cargar-paginas-paginacion.js` | Que la barra de paginación se pliegue **solo cuando no falta ninguna página**, y que la celda del total («132 items») se quede siempre. Los cuatro casos que NO deben plegarla —casilla apagada, parada por un fallo, parada por la ruleta, listado de una sola página— pesan más que el que sí: plegarla al pararse a medias quitaría la única salida justo cuando hace falta. Tarda el doble que los demás porque cada caso corre dos veces, una para saber cuántas celdas pinta el fixture. |
 
 ## Lo que el arnés reproduce a propósito

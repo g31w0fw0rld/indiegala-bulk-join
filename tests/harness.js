@@ -132,7 +132,7 @@ async function run({
     current = 1, last = 3, level = 'all', pages = {}, carousel = [],
     loadAllPages = true, rememberFilters = false, savedPage = 1,
     wheel = 'baseline', search = false, busy = false, serve = {},
-    withAsyncImgLoader = false, waitMs = 5000
+    withAsyncImgLoader = false, waitMs = 5000, retitulo = null
 } = {}) {
     const total = Object.values(pages).reduce((n, p) => n + p.length, 0);
     const cells = (pages[current] || []).map(cell);
@@ -174,6 +174,11 @@ async function run({
     const loadListCalls = [];
     w.loadGiveawaysListContents = (url) => { loadListCalls.push(String(url)); };
     w.joinGiveawayOrAuction = () => { };
+    // El alert() del vigilante de la ruleta se fue en 1.11.0. Se captura en vez
+    // de dejarlo estallar (jsdom no lo implementa) para poder AFIRMAR que no se
+    // llama: un aviso bloqueante se ve aqui igual de bien que en el navegador.
+    const alertas = [];
+    w.alert = (msg) => { alertas.push(String(msg)); };
     // El revelador de imagenes del sitio, solo cuando el test lo pide: asi el
     // caso normal ejerce el RESPALDO del script (que es el que tiene que
     // funcionar si el sitio le cambia el nombre) y este caso comprueba que,
@@ -213,6 +218,11 @@ async function run({
 
     const code = fs.readFileSync(SCRIPT_PATH, 'utf8');
     w.eval(code);
+
+    // Simula que el sitio reescribe el <title> por su cuenta (lo hace en sus
+    // navegaciones AJAX). Es la unica forma de ejercer el vigilante del titulo:
+    // sin alguien que lo pise, no se distingue de no tenerlo.
+    if (retitulo) setTimeout(() => { w.document.title = retitulo.texto; }, retitulo.ms);
 
     await new Promise(r => setTimeout(r, waitMs));
 
@@ -262,6 +272,15 @@ async function run({
             const tot = cs.find(c => !c.querySelector('a, .current'));
             return !!(tot && !tot.classList.contains('ig-pag-folded') && /\d+\s*items/.test(tot.textContent || ''));
         })(),
+        // Aviso de ruleta: la marca en el titulo (lo unico que se ve desde otra
+        // pestaña), los toasts que quedan en pie y las llamadas a alert().
+        titulo: w.document.title,
+        toasts: Array.from(w.document.querySelectorAll('.ig-toast')).map(t => (t.textContent || '').trim()),
+        // Un toast con `title` es de los que no se van solos (ahi se le pone el
+        // "clic para cerrar"). Es como se distingue del toast normal, que a los
+        // 4,5 s ya no esta.
+        toastsPegajosos: Array.from(w.document.querySelectorAll('.ig-toast')).filter(t => t.title).length,
+        alertas,
         estado: statusEl ? (statusEl.textContent || '').trim() : null,
         estadoVisible: statusEl ? statusEl.style.display !== 'none' : false,
         casilla: (() => { const c = w.document.querySelector('#ig-bw-load-all'); return c ? !!c.checked : null; })(),

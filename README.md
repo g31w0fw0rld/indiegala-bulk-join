@@ -49,7 +49,7 @@ Tampermonkey userscript that adds a unified ticket-purchase queue and utilities 
 - Announces prizes that ended **today** in its own in-page widget with links, plus a beep and a tab-title badge — once per prize, remembered so it never nags twice.
 
 **Wheel of Fortune**
-- Watches the wheel entry in the user menu and **reloads `/giveaways` every 15 minutes** while the queue is idle, so a change of state does not slip by; when it changes, it alerts you.
+- Watches the wheel entry in the user menu and **reloads `/giveaways` every 15 minutes** while the queue is idle, so a change of state does not slip by; when it changes, it tells you without interrupting: a toast that stays until you dismiss it, a sound and a 🎡 mark at the start of the tab title (the part you can see from another tab). The mark goes away once you spin. The sound is up to the browser — without a previous interaction on the page it may be blocked — so it is never the only channel.
 - After a spin it reads the prize, tells you which one, and reloads **when you close the popup** — not on a timer — so your balance and the menu are up to date without cutting your reading short. It never reloads while the queue is running or a dialog is open.
 
 **Listing options**
@@ -103,7 +103,7 @@ Tampermonkey userscript that adds a unified ticket-purchase queue and utilities 
 - Anuncia los premios terminados **hoy** en su propio widget dentro de la página, con enlaces, un beep y un contador en el título de la pestaña — una sola vez por premio, recordado para no repetirse.
 
 **Wheel of Fortune**
-- Vigila la entrada de la ruleta en el menú de usuario y **recarga `/giveaways` cada 15 minutos** mientras la cola está parada, para que un cambio de estado no se te pase; cuando cambia, te avisa.
+- Vigila la entrada de la ruleta en el menú de usuario y **recarga `/giveaways` cada 15 minutos** mientras la cola está parada, para que un cambio de estado no se te pase; cuando cambia, te avisa sin interrumpir: un toast que se queda hasta que lo cierres, un sonido y una marca 🎡 al principio del título de la pestaña (que es lo que se ve desde otra pestaña). La marca se va al girar. El sonido depende del navegador —sin haber tocado antes la página puede bloquearlo—, así que nunca es el único aviso.
 - Tras un giro lee el premio, te dice cuál es, y recarga **al cerrar tú el popup** —no por temporizador— para que el saldo y el menú queden al día sin cortarte la lectura. Nunca recarga con la cola corriendo ni con un diálogo abierto.
 
 **Opciones del listado**

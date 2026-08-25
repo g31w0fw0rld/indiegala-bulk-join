@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Bulk Tools (giveaway ticket queue + store links)
 // @namespace    http://tampermonkey.net/
-// @version      1.10.0
+// @version      1.10.1
 // @description  Unified ticket queue for Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another; add, remove and reorder mid-run, and tickets you cannot afford wait instead of killing the run. GalaSilver widget, prize checking, wheel alerts, remembered filters, every listing page in one. On store product pages it adds GG.deals and PCGamingWiki title-search buttons. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -50,7 +50,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.10.0';
+    const SCRIPT_VERSION = '1.10.1';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     // La advertencia de automatizacion solo aplica al modulo de giveaways. En la
     // tienda este script no automatiza nada —pone dos enlaces— y avisar ahi de un
@@ -214,7 +214,8 @@
             libWonStatus: '🎉 ¡Ganaste {n} premio(s) hoy!',
             winWidgetTitle: '🎉 ¡Premios ganados hoy! ({n})',
             libElementNotFound: 'No encontré un elemento de la biblioteca a tiempo. Revísalo manualmente.',
-            wheelAvailableAlert: '🎡 ¡La Wheel of Fortune cambió de estado (puede estar disponible para girar)! Atiéndela ahora para que no se te pase.',
+            wheelAvailableAlert: '🎡 ¡La Wheel of Fortune cambió de estado (puede estar disponible para girar)! Atiéndela ahora para que no se te pase. Este aviso se queda hasta que lo cierres.',
+            toastSticky: 'Clic para cerrar este aviso',
             wheelSpinWon: '🎡 Ruleta: ganaste {prize}',
             wheelPrizeAfterReload: '🎡 Ruleta: ganaste {prize} · saldo actualizado',
             wheelReloadNotice: '🎡 Ganaste {prize} · al cerrar se recarga para actualizar tu saldo',
@@ -339,7 +340,8 @@
             libWonStatus: '🎉 You won {n} prize(s) today!',
             winWidgetTitle: '🎉 Prizes won today! ({n})',
             libElementNotFound: 'Could not find a library element in time. Please check manually.',
-            wheelAvailableAlert: '🎡 The Wheel of Fortune changed state (it may be available to spin)! Go attend it now so you don\'t miss it.',
+            wheelAvailableAlert: '🎡 The Wheel of Fortune changed state (it may be available to spin)! Go attend it now so you don\'t miss it. This notice stays until you dismiss it.',
+            toastSticky: 'Click to dismiss this notice',
             wheelSpinWon: '🎡 Wheel: you won {prize}',
             wheelPrizeAfterReload: '🎡 Wheel: you won {prize} · balance updated',
             wheelReloadNotice: '🎡 You won {prize} · closing it reloads the page to refresh your balance',
@@ -382,6 +384,7 @@
                 '• Anuncia los premios terminados hoy en un widget dentro de la página, con enlaces, beep y contador en el título de la pestaña. Una sola vez por premio.',
                 '▸ Wheel of Fortune',
                 '• Recarga /giveaways cada 15 min mientras la cola está parada, para avisarte si la ruleta cambia de estado.',
+                '• El aviso no interrumpe: un toast que se queda hasta que lo cierres, un sonido y una marca 🎡 al principio del título de la pestaña, que es lo que se ve desde otra pestaña. La marca se va al girar. El sonido depende del navegador: sin haber tocado antes la página puede bloquearlo, y por eso nunca es el único aviso.',
                 '• Tras girar te dice el premio y recarga al cerrar tú el popup, para que el saldo quede al día. Nunca recarga con la cola corriendo ni con un diálogo abierto.',
                 '▸ Opciones del listado',
                 '• Recordar filtros de búsqueda (orden, nivel, texto y página), ocultar los giveaways en los que ya tienes boleto y elegir el idioma del script (es/en/Auto).',
@@ -422,6 +425,7 @@
                 '• Announces prizes that ended today in a widget inside the page, with links, a beep and a tab-title badge. Once per prize.',
                 '▸ Wheel of Fortune',
                 '• Reloads /giveaways every 15 min while the queue is idle, to alert you if the wheel changes state.',
+                '• The notice does not interrupt: a toast that stays until you dismiss it, a sound and a 🎡 mark at the start of the tab title, which is what you can see from another tab. The mark goes away once you spin. The sound is up to the browser: without a previous interaction on the page it may block it, which is why it is never the only channel.',
                 '• After a spin it tells you the prize and reloads when you close the popup, so the balance is up to date. It never reloads while the queue runs or a dialog is open.',
                 '▸ Listing options',
                 '• Remember search filters (sort, level, text and page), hide giveaways you already entered and choose the script language (es/en/Auto).',
@@ -565,7 +569,7 @@
     // corriendo, se auto-refresca cada CFG.wheelCheckIntervalMs y compara el
     // elemento del menu de usuario contra esta firma base ("elemento en
     // cuestion" = estado actual sin novedad). Si difiere, asumimos que la rueda
-    // cambio de estado (disponible) y avisamos con alert().
+    // cambio de estado (disponible) y avisamos con notifyWheelAvailable().
     const WHEEL_SELECTOR = '.menu-fortune-wheel';
     const WHEEL_BASELINE_HTML = '<li class="menu-fortune-wheel"><span><i aria-hidden="true" class="fa fa-gift"></i>Wheel of Fortune</span></li>';
 
@@ -586,6 +590,30 @@
     //   lastPrize   -> premio pendiente de reanunciar tras la recarga (el toast
     //                  del giro muere con el reload). Se limpia al anunciarlo.
     const WHEEL_STATE_KEY = 'ig-bulk-wheel-state';
+    // Marca que el aviso de ruleta pone al principio del <title> de la pestana.
+    // Es lo unico del aviso que se ve con la pestana en segundo plano, que es
+    // justo cuando el vigilante trabaja.
+    const WHEEL_TITLE_MARK = '🎡';
+    // Sonido del aviso de ruleta. Pega aqui el data: URI COMPLETO, con su
+    // cabecera y todo: 'data:audio/mpeg;base64,SUQzB…' (o audio/ogg, audio/wav,
+    // segun el fichero). Va inline a proposito: un userscript no tiene donde
+    // alojar un .mp3, y un enlace externo se caeria el dia que muera el hosting.
+    //
+    // Dejarlo vacio no rompe nada: se usa el beep sintetizado de Web Audio, que
+    // es tambien lo que suena si el navegador o la CSP del sitio rechazan el
+    // data: URI. El aviso nunca depende de que el sonido llegue a sonar.
+    const WHEEL_ALERT_SOUND = 'data:audio/mpeg;base64,//uUxAADwAABpAAAACAAADSAAAAETEFNRQMACQgABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//uUxAADwAABpAAAACAAADSAAAAETEFNRQMACQgABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//uUxAADwAABpAAAACAAADSAAAAETEFNRQMACQgABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA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';
+    // Volumen del sonido de arriba (0–1). En 1 a proposito: el fichero pegado
+    // viene grabado bajo —su pico esta al 14% de la escala, medido sobre el
+    // MP3 decodificado—, asi que bajarlo aqui lo deja practicamente inaudible.
+    // Si algun dia se cambia el sonido por uno normalizado, esto se baja.
+    // El beep sintetizado no lo usa: lleva su volumen dentro.
+    const WHEEL_ALERT_VOLUME = 1;
+
+    // Cada cuanto comprueba el vigilante del titulo que la marca sigue puesta.
+    // 3 s: el titulo solo lo reescribe el sitio en sus navegaciones AJAX, no es
+    // algo que pase a destajo, y la comprobacion es una comparacion de cadenas.
+    const TITLE_GUARD_MS = 3000;
 
     // =============================================
     // ESTADO
@@ -1940,7 +1968,11 @@
     // =============================================
     // TOAST (notificaciones no-bloqueantes)
     // =============================================
-    function showToast(message, type) {
+    // `durationMs` opcional: por defecto 4,5 s. Un 0 (o negativo) deja el
+    // toast puesto hasta que el usuario lo cierre con un clic — para avisos que
+    // no se pueden perder, como el de la ruleta, donde 4,5 s con la pestana en
+    // segundo plano equivalen a no avisar.
+    function showToast(message, type, durationMs) {
         let container = document.getElementById('ig-toast-container');
         if (!container) {
             container = document.createElement('div');
@@ -1957,7 +1989,152 @@
             setTimeout(() => toast.remove(), 300);
         };
         toast.addEventListener('click', dismiss);
-        setTimeout(dismiss, 4500);
+        const ms = (durationMs === undefined) ? 4500 : durationMs;
+        if (ms > 0) setTimeout(dismiss, ms);
+        else toast.title = T.toastSticky;
+    }
+
+    // =============================================
+    // AVISOS: BEEP Y MARCA EN EL TITULO DE LA PESTANA
+    // =============================================
+
+    // Beep de aviso (Web Audio, best-effort). `steps` es la melodia como
+    // [frecuencia Hz, offset en segundos]; `tailSec` es cuanto tarda en
+    // apagarse desde el ultimo tono.
+    //
+    // Sin un gesto previo del usuario EN esta carga el navegador crea el
+    // contexto suspendido y el beep no suena: resume() lo pide, y si el
+    // navegador dice que no, el aviso sigue viendose en el titulo de la
+    // pestana. Por eso el sonido nunca es el unico canal.
+    function playBeep(steps, volume, tailSec) {
+        try {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return;
+            const ctx = new Ctx();
+            const close = () => { try { ctx.close(); } catch (_) {} };
+            if (ctx.state === 'suspended') { try { ctx.resume(); } catch (_) {} }
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            o.type = 'sine';
+            o.connect(g); g.connect(ctx.destination);
+            const t0 = ctx.currentTime;
+            const last = steps[steps.length - 1][1];
+            steps.forEach(([hz, at]) => o.frequency.setValueAtTime(hz, t0 + at));
+            g.gain.setValueAtTime(volume, t0);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + last + tailSec);
+            o.start(t0);
+            o.stop(t0 + last + tailSec + 0.02);
+            o.onended = close;
+            // Red de seguridad: con el contexto bloqueado por el navegador el
+            // oscilador nunca termina y onended no llega, asi que el contexto
+            // se quedaria abierto. Solo cierra si sigue suspendido.
+            setTimeout(() => { if (ctx.state === 'suspended') close(); }, (last + tailSec) * 1000 + 3000);
+        } catch (_) {}
+    }
+
+    // Premio ganado: arpegio corto ascendente.
+    function playWinBeep() {
+        playBeep([[880, 0], [1175, 0.12]], 0.06, 0.28);
+    }
+
+    // Ruleta disponible: suena el fichero de WHEEL_ALERT_SOUND si hay uno, y si
+    // no —o si el navegador se niega a reproducirlo— cae al beep sintetizado.
+    //
+    // La caida tiene que ir en el `catch` Y en el rechazo de la promesa de
+    // play(): un data: URI mal formado revienta al construir el Audio, pero un
+    // bloqueo por autoplay o por la CSP del sitio no lanza nada, solo rechaza la
+    // promesa, y sin ese segundo camino el aviso se quedaria mudo sin que nadie
+    // se entere.
+    function playWheelAlert() {
+        if (!WHEEL_ALERT_SOUND) { playWheelFallbackBeep(); return; }
+        try {
+            const a = new Audio(WHEEL_ALERT_SOUND);
+            a.volume = WHEEL_ALERT_VOLUME;
+            const pr = a.play();
+            if (pr && typeof pr.catch === 'function') {
+                pr.catch((e) => {
+                    console.warn('[IG-BulkTools] wheel: sonido rechazado, uso el beep:', e && e.name);
+                    playWheelFallbackBeep();
+                });
+            }
+        } catch (e) {
+            console.warn('[IG-BulkTools] wheel: sonido no reproducible, uso el beep:', e);
+            playWheelFallbackBeep();
+        }
+    }
+
+    // Tres tonos, algo mas largo y separado que el de premio, para que no se
+    // confundan de oido. Es un "ven a mirar", no un "ganaste".
+    function playWheelFallbackBeep() {
+        playBeep([[784, 0], [1047, 0.18], [1319, 0.36]], 0.07, 0.45);
+    }
+
+    // -------- Marcas al principio del <title> de la pestana --------
+    //
+    // El titulo se repinta entero desde `titleBase` + las marcas puestas, en vez
+    // de ir concatenando prefijos: asi dos avisos a la vez no se pisan y quitar
+    // uno no se lleva al otro por delante.
+    //
+    // El titulo no es nuestro —el sitio lo reescribe en sus navegaciones AJAX—,
+    // de ahi el vigilante: cuando ve un titulo que no es el que dejamos, asume
+    // que el nuevo es el del sitio y vuelve a poner las marcas encima. Solo
+    // escribe cuando falta algo, asi que no se pelea con nadie ni se dispara a
+    // si mismo.
+    const titleMarks = [];
+    let titleBase = null;
+    let titleGuardId = null;
+    // Marca de premios en curso, p. ej. "(2)". Se guarda para poder sustituirla
+    // cuando cambia la cuenta: el contenido es parte de la marca, asi que la
+    // vieja hay que quitarla por su valor exacto.
+    let winsTitleMark = null;
+
+    function stripTitleMarks(title) {
+        let s = title || '';
+        for (let again = true; again;) {
+            again = false;
+            for (const m of titleMarks) {
+                if (s.indexOf(m + ' ') === 0) { s = s.slice(m.length + 1); again = true; }
+            }
+        }
+        return s;
+    }
+
+    function wantedTitle() {
+        return titleMarks.length ? titleMarks.join(' ') + ' ' + titleBase : titleBase;
+    }
+
+    function renderTitle() {
+        const want = wantedTitle();
+        if (want === null) return;
+        try { if (document.title !== want) document.title = want; } catch (_) {}
+    }
+
+    function startTitleGuard() {
+        if (titleGuardId !== null) return;
+        titleGuardId = setInterval(() => {
+            if (!titleMarks.length) return;
+            if (document.title === wantedTitle()) return;
+            titleBase = stripTitleMarks(document.title);
+            renderTitle();
+        }, TITLE_GUARD_MS);
+    }
+
+    function addTitleMark(mark) {
+        if (titleBase === null) titleBase = stripTitleMarks(document.title);
+        if (titleMarks.indexOf(mark) === -1) titleMarks.push(mark);
+        renderTitle();
+        startTitleGuard();
+    }
+
+    function removeTitleMark(mark) {
+        const i = titleMarks.indexOf(mark);
+        if (i === -1) return;
+        titleMarks.splice(i, 1);
+        renderTitle();
+        if (!titleMarks.length && titleGuardId !== null) {
+            clearInterval(titleGuardId);
+            titleGuardId = null;
+        }
     }
 
     // =============================================
@@ -3503,28 +3680,6 @@
         w.querySelector('.ig-wn-close').addEventListener('click', () => { try { w.remove(); } catch (_) {} });
     }
 
-    // Beep de aviso (Web Audio, best-effort: la pestaña puede bloquear el audio
-    // sin un gesto previo del usuario). Pequeno arpegio ascendente.
-    function playWinBeep() {
-        try {
-            const Ctx = window.AudioContext || window.webkitAudioContext;
-            if (!Ctx) return;
-            const ctx = new Ctx();
-            const o = ctx.createOscillator();
-            const g = ctx.createGain();
-            o.type = 'sine';
-            o.connect(g); g.connect(ctx.destination);
-            const t0 = ctx.currentTime;
-            o.frequency.setValueAtTime(880, t0);
-            o.frequency.setValueAtTime(1175, t0 + 0.12);
-            g.gain.setValueAtTime(0.06, t0);
-            g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.4);
-            o.start(t0);
-            o.stop(t0 + 0.42);
-            o.onended = () => { try { ctx.close(); } catch (_) {} };
-        } catch (_) {}
-    }
-
     // Detecta premios ganados hoy en "Completed won", anuncia solo los que no
     // habiamos visto antes (widget propio in-page + beep + toast) y los marca
     // como vistos (persistente). Al abrir esta subseccion el propio sitio da por
@@ -3540,8 +3695,14 @@
         const status = fmt(T.libWonStatus, { n: fresh.length });
         showLibraryStatus(status);
         try { showToast(status, 'success'); } catch (_) {}
-        // Badge en el titulo de la pestaña, como en Twitch/Kick.
-        try { document.title = '(' + fresh.length + ') ' + document.title.replace(/^\(\d+\)\s*/, ''); } catch (_) {}
+        // Badge en el titulo de la pestaña, como en Twitch/Kick. Va por el
+        // gestor de marcas para convivir con la 🎡 de la ruleta: si estan las
+        // dos, ninguna se come a la otra.
+        try {
+            if (winsTitleMark) removeTitleMark(winsTitleMark);
+            winsTitleMark = '(' + fresh.length + ')';
+            addTitleMark(winsTitleMark);
+        } catch (_) {}
 
         showWinWidget(fresh);
         playWinBeep();
@@ -3678,7 +3839,8 @@
 
     // Chequeo puntual en el load actual: espera a que el .menu-fortune-wheel
     // exista (el submenu de usuario puede renderizarse por AJAX), compara su
-    // firma contra la base y, si difiere, dispara un alert() bloqueante.
+    // firma contra la base y, si difiere, lanza el aviso no bloqueante
+    // (toast + sonido + marca en el titulo de la pestana).
     //
     // Si venimos de una recarga post-giro (relearn), NO avisa: el estado que
     // muestra el menu en ese momento es por definicion "ya giraste hoy", asi
@@ -3716,10 +3878,21 @@
         // traido se lo lleva la recarga. Regla del usuario, no una suposicion.
         wheelAvailable = changed;
         wheelChecked = true;
-        if (changed) {
-            try { (typeof unsafeWindow !== 'undefined' && unsafeWindow.alert ? unsafeWindow.alert : window.alert)(T.wheelAvailableAlert); }
-            catch (_) { try { window.alert(T.wheelAvailableAlert); } catch (__) {} }
-        }
+        if (changed) notifyWheelAvailable();
+    }
+
+    // Aviso de "hay ruleta": toast que se queda hasta que lo cierres, beep y
+    // marca 🎡 al principio del titulo de la pestana.
+    //
+    // Aqui habia un alert(). Se fue por dos motivos: congelaba la pagina —y con
+    // ella la cola y las recargas del propio vigilante— hasta que alguien lo
+    // cerrara, y no se ve ni suena con la pestana en segundo plano, que es
+    // precisamente cuando el vigilante trabaja. La marca en el titulo si se ve
+    // desde otra pestana, sin foco y sin permisos que pedir.
+    function notifyWheelAvailable() {
+        try { showToast(T.wheelAvailableAlert, 'warn', 0); } catch (_) {}
+        try { addTitleMark(WHEEL_TITLE_MARK); } catch (_) {}
+        try { playWheelAlert(); } catch (_) {}
     }
 
     // Tras la recarga post-giro, vuelve a mostrar el premio en un toast. El
@@ -3841,7 +4014,11 @@
 
             const prize = readWheelPrize(results);
             console.log('[IG-BulkTools] wheel: giro completado, premio:', prize);
+            // Ya giraste: la marca del titulo pierde su sentido antes incluso de
+            // la recarga, y dejarla puesta seria avisar de algo ya atendido.
+            try { removeTitleMark(WHEEL_TITLE_MARK); } catch (_) {}
             try { showToast(fmt(T.wheelSpinWon, { prize }), 'success'); } catch (_) {}
+            try { playWinBeep(); } catch (_) {}
 
             // Marcar ANTES de recargar. relearn -> la firma base se reaprende en
             // el load siguiente, ya con el menu actualizado por el servidor.
