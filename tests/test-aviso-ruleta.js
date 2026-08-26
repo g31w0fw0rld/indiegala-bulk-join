@@ -1,14 +1,12 @@
-// El aviso de "hay ruleta por girar": lo que se ve, lo que se queda y en qué
-// orden llega.
+// El aviso de "hay ruleta por girar": que llegue por los canales que no
+// interrumpen, y por NINGUNO que sí.
 //
-// El alert() se fue en 1.10.1 y volvió en 1.10.2, y no es un círculo: en medio
-// se probó el sonido y la consola lo tumbó —`NotAllowedError: play() failed
-// because the user didn't interact with the document first`—. Sin sonido, el
-// diálogo es lo único que se planta delante al volver a la pestaña, y la marca
-// del título es lo que se ve mientras no vuelves. Por eso este test exige LAS
-// DOS cosas, y además que la marca esté puesta ANTES del alert(): el diálogo
-// congela el hilo, así que lo que no esté pintado antes no se ve hasta que lo
-// cierres, que es cuando ya no sirve.
+// El alert() dio dos vueltas antes de irse del todo, y las dos por datos: se
+// quitó en 1.10.1 por bloqueante, volvió en 1.10.2 cuando la consola demostró
+// que el sonido no podía sonar —`NotAllowedError: play() failed because the user
+// didn't interact with the document first`—, y se fue definitivamente al quitar
+// la recarga del vigilante, que era justo lo que impedía sonar. Por eso el caso
+// de «ningún alert()» NO es cosmético: es lo que impide que vuelva sin querer.
 //
 // Se comprueban EFECTOS OBSERVABLES: el <title>, los toasts en pie, las llamadas
 // a alert() y la cuenta atrás del widget. El sonido NO se prueba: jsdom no
@@ -18,8 +16,8 @@
 // pasaría los mismos asertos que una marca puesta cuando toca.
 //
 // Control positivo (obligatorio para creerse esto):
-//   IG_SCRIPT=/ruta/al/1.10.0/indiegala-bulk-join.user.js node test-aviso-ruleta.js
-// tiene que FALLAR, con alert() llamado y sin marca en el título.
+//   IG_SCRIPT=/ruta/al/1.10.2/indiegala-bulk-join.user.js node test-aviso-ruleta.js
+// tiene que FALLAR: esa versión sí llamaba a alert().
 const { run, pageCells } = require('./harness');
 
 const PAGES = { 1: pageCells(1, 4), 2: pageCells(2, 4), 3: pageCells(3, 3) };
@@ -29,19 +27,14 @@ const TITULO_SITIO = 'IndieGala Giveaways';
 
 const CASOS = [
     {
-        nombre: 'ruleta por girar: marca en el titulo ANTES del alert, toast que se queda',
+        nombre: 'ruleta por girar: marca en el titulo, toast que se queda, ningun alert',
         opts: { wheel: 'available' },
         // El toast normal dura 4,5 s y el arnés espera 5: si a estas alturas
         // sigue en pie es porque se pidió que no se fuera solo.
         titulo: MARCA + ' ' + TITULO_SITIO,
         toastContiene: 'Wheel of Fortune',
         pegajosos: 1,
-        alertas: 1,
-        alertaContiene: 'Wheel of Fortune',
-        // La marca tiene que estar puesta cuando el alert() llega. El arnés
-        // apunta el título en ese instante, así que esto es lo que separa
-        // «salieron los dos» de «salieron en el orden que sirve».
-        tituloAlAlertar: MARCA + ' ' + TITULO_SITIO,
+        alertas: 0,
         // Con ruleta delante, la línea NO cuenta atrás: dice que está aquí.
         lineaContiene: 'available now',
         lineaAvisando: true
@@ -66,7 +59,7 @@ const CASOS = [
         titulo: MARCA + ' Otra cosa',
         toastContiene: 'Wheel of Fortune',
         pegajosos: 1,
-        alertas: 1,
+        alertas: 0,
         lineaContiene: 'available now',
         lineaAvisando: true
     }
@@ -79,12 +72,6 @@ const CASOS = [
         const problemas = [];
         if (r.titulo !== c.titulo) problemas.push(`titulo "${r.titulo}" != "${c.titulo}"`);
         if (r.alertas.length !== c.alertas) problemas.push(`alert() llamado ${r.alertas.length} veces (esperaba ${c.alertas})`);
-        if (c.alertaContiene && !(r.alertas[0] || '').includes(c.alertaContiene)) {
-            problemas.push(`el alert dijo "${r.alertas[0] || ''}" y no menciona "${c.alertaContiene}"`);
-        }
-        if (c.tituloAlAlertar && r.tituloAlAlertar !== c.tituloAlAlertar) {
-            problemas.push(`al llamar a alert() el título era "${r.tituloAlAlertar}" y debía ser "${c.tituloAlAlertar}" (la marca llegó tarde)`);
-        }
         if (r.toastsPegajosos !== c.pegajosos) problemas.push(`toasts que no se van solos: ${r.toastsPegajosos} != ${c.pegajosos}`);
         if (c.lineaContiene != null) {
             const linea = r.lineaRuleta || '';
@@ -101,7 +88,6 @@ const CASOS = [
         console.log(JSON.stringify({
             caso: c.nombre,
             titulo: r.titulo,
-            tituloAlAlertar: r.tituloAlAlertar,
             lineaRuleta: r.lineaRuleta,
             toasts: r.toasts,
             toastsPegajosos: r.toastsPegajosos,

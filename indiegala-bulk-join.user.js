@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Bulk Tools (giveaway ticket queue + store links)
 // @namespace    http://tampermonkey.net/
-// @version      1.10.2
+// @version      1.10.3
 // @description  Unified ticket queue for Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another; add, remove and reorder mid-run, and tickets you cannot afford wait instead of killing the run. GalaSilver widget, prize checking, wheel alerts, remembered filters, every listing page in one. On store product pages it adds GG.deals and PCGamingWiki title-search buttons. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -50,7 +50,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.10.2';
+    const SCRIPT_VERSION = '1.10.3';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     // La advertencia de automatizacion solo aplica al modulo de giveaways. En la
     // tienda este script no automatiza nada —pone dos enlaces— y avisar ahi de un
@@ -214,7 +214,7 @@
             libWonStatus: '🎉 ¡Ganaste {n} premio(s) hoy!',
             winWidgetTitle: '🎉 ¡Premios ganados hoy! ({n})',
             libElementNotFound: 'No encontré un elemento de la biblioteca a tiempo. Revísalo manualmente.',
-            wheelAvailableAlert: '🎡 ¡La Wheel of Fortune cambió de estado (puede estar disponible para girar)! Atiéndela ahora para que no se te pase.',
+            wheelAvailableAlert: '🎡 ¡La Wheel of Fortune cambió de estado (puede estar disponible para girar)! Atiéndela ahora para que no se te pase. Este aviso se queda hasta que lo cierres.',
             toastSticky: 'Clic para cerrar este aviso',
             wheelCountdown: '🎡 Próxima ruleta en {v} ({h})',
             wheelReady: '🎡 Ruleta disponible ahora',
@@ -343,7 +343,7 @@
             libWonStatus: '🎉 You won {n} prize(s) today!',
             winWidgetTitle: '🎉 Prizes won today! ({n})',
             libElementNotFound: 'Could not find a library element in time. Please check manually.',
-            wheelAvailableAlert: '🎡 The Wheel of Fortune changed state (it may be available to spin)! Go attend it now so you don\'t miss it.',
+            wheelAvailableAlert: '🎡 The Wheel of Fortune changed state (it may be available to spin)! Go attend it now so you don\'t miss it. This notice stays until you dismiss it.',
             toastSticky: 'Click to dismiss this notice',
             wheelCountdown: '🎡 Next wheel in {v} ({h})',
             wheelReady: '🎡 Wheel available now',
@@ -390,7 +390,7 @@
                 '• Anuncia los premios terminados hoy en un widget dentro de la página, con enlaces, beep y contador en el título de la pestaña. Una sola vez por premio.',
                 '▸ Wheel of Fortune',
                 '• Pregunta cada 15 min si la ruleta cambió de estado, al mismo sitio del que Indiegala lo saca para pintar su menú, y sin recargar la página. Solo recarga el día que sí hay ruleta —el popup para girarla lo monta el sitio al cargar—, y lo hace después de avisarte.',
-                '• El aviso son tres cosas a la vez: un doble toque de sonido, una marca 🎡 al principio del título de la pestaña —puesta ANTES del diálogo, y lo que se ve desde otra pestaña— y un cuadro de diálogo que hay que cerrar. La marca se va al girar.',
+                '• El aviso son tres cosas a la vez y ninguna te interrumpe: un doble toque de sonido, una marca 🎡 al principio del título de la pestaña —lo único que se lee desde otra pestaña— y un toast que se queda hasta que lo cierres. La marca se va al girar.',
                 '• Sobre el sonido: los navegadores no dejan sonar a una página con la que aún no has interactuado, así que tu primer clic o tecla lo desbloquea, en silencio y sin que se note. A partir de ahí suena aunque estés en otra pestaña, porque la página sigue viva —el vigilante ya no la recarga—. El único aviso que no puede sonar es el de la primera carga, si abres la página y la ruleta ya está ahí; ese lo tienes delante de todas formas.',
                 '• El widget lleva la cuenta atrás de la próxima ruleta, con la hora en tu reloj, y pasa a decir «disponible ahora» cuando la hay. Se repinta sola cada medio minuto. Ojo con la hora: Indiegala no publica en ninguna parte cuándo reinicia la ruleta —no está ni en la página, ni en su JS, ni en los datos de tu cuenta—, así que el script cuenta hacia las 00:00 UTC, que es cuando empieza su día, y apunta en la consola la ventana en la que ve aparecer la ruleta por si algún día no cuadra.',
                 '• Tras girar te dice el premio y recarga al cerrar tú el popup, para que el saldo quede al día. Nunca recarga con la cola corriendo ni con un diálogo abierto.',
@@ -433,7 +433,7 @@
                 '• Announces prizes that ended today in a widget inside the page, with links, a beep and a tab-title badge. Once per prize.',
                 '▸ Wheel of Fortune',
                 '• Asks every 15 min whether the wheel changed state, from the same place Indiegala itself reads it to draw its menu, and without reloading the page. It only reloads on the day there IS a wheel — the popup to spin it is built by the site on load — and it does so after alerting you.',
-                '• The notice is three things at once: a double chime, a 🎡 mark at the start of the tab title —set BEFORE the dialog, and the part you can see from another tab— and a dialog you have to dismiss. The mark goes away once you spin.',
+                '• The notice is three things at once and none of them interrupts you: a double chime, a 🎡 mark at the start of the tab title —the only part you can read from another tab— and a toast that stays until you dismiss it. The mark goes away once you spin.',
                 '• About the sound: browsers do not let a page play audio until you have interacted with it, so your first click or keypress unlocks it, silently and unnoticed. From then on it plays even while you are in another tab, because the page stays alive — the watcher no longer reloads it. The only notice that cannot play is the one on the very first load, if you open the page and the wheel is already there; that one is right in front of you anyway.',
                 '• The widget counts down to the next wheel, with the time on your own clock, and switches to «available now» when there is one. It redraws itself every half minute. About that hour: Indiegala states nowhere when the wheel resets —not on the page, not in its JS, not in your account data— so the script counts towards 00:00 UTC, which is when its day starts, and logs to the console the window in which it sees the wheel show up, in case it ever does not match.',
                 '• After a spin it tells you the prize and reloads when you close the popup, so the balance is up to date. It never reloads while the queue runs or a dialog is open.',
@@ -4090,35 +4090,29 @@
     // Aviso de "hay ruleta": marca 🎡 en el titulo de la pestana, toast, y un
     // alert() que hay que cerrar.
     //
-    // El sonido es un beep sintetizado, no un fichero. Se probo con un MP3
-    // embebido y la consola lo tumbo: `NotAllowedError — play() failed because
-    // the user didn't interact with the document first`. Cambiar de <audio> a
-    // Web Audio NO arregla eso —los dos estan bajo la misma politica—; lo que lo
-    // arregla es que el vigilante ya no recargue, porque el aviso llega ahora
-    // sobre una pagina viva en la que ya hiciste clic. Por eso el beep del
-    // premio siempre sono: llega justo despues de que pulses Spin.
+    // Tres canales, ninguno bloqueante: marca 🎡 al principio del titulo (lo
+    // unico que se lee desde OTRA pestana), toast que se queda hasta que lo
+    // cierres, y un doble toque de sonido.
     //
-    // Queda un caso mudo, y es el bueno: si al ABRIR /giveaways ya hay ruleta,
-    // ahi no ha habido ningun gesto todavia y el navegador no deja sonar nada.
-    // Da igual — ese aviso lo tienes delante.
+    // Aqui hubo un alert() hasta 1.10.2, y se fue por segunda vez cuando el
+    // sonido empezo a funcionar. No solo por redundante: el vigilante espera a
+    // que cierres el dialogo antes de recargar, y esa recarga es la que trae el
+    // popup para girar. Sin dialogo la secuencia sale al reves de bien —suena,
+    // recarga— y cuando vuelves la ruleta ya esta en pantalla, en vez de detras
+    // de un cuadro que hay que cerrar primero.
     //
-    // El alert() esta aqui porque es lo unico que se planta delante cuando
-    // regresas a la pestana. Sus dos pegas siguen siendo ciertas —congela la
-    // pagina hasta que lo cierres, y con la pestana en segundo plano el dialogo
-    // no se ve— y es justo lo que cubren el sonido y la marca del titulo.
-    //
-    // El orden no es cosmetico: alert() congela el hilo, asi que la marca y el
-    // toast tienen que estar pintados ANTES, con un respiro para que el
-    // navegador los dibuje. Lanzandolo primero, lo unico que se ve mientras el
-    // dialogo esta arriba es la pagina tal como estaba.
-    async function notifyWheelAvailable() {
-        console.log('[IG-BulkTools] wheel: lanzando aviso (marca + toast + beep + alert)');
+    // Sobre el sonido: es un beep sintetizado y no un fichero, pero eso da igual
+    // —<audio> y Web Audio estan bajo la misma politica de autoplay—. Lo que
+    // hace que suene es que el vigilante ya no recargue: el aviso llega sobre una
+    // pagina viva en la que ya hiciste clic. Por eso el beep del premio siempre
+    // sono, llega justo despues de que pulses Spin. Queda un caso mudo, y es el
+    // bueno: si al ABRIR /giveaways ya hay ruleta, ahi no ha habido ningun gesto
+    // y no suena nada. Da igual — ese aviso lo tienes delante.
+    function notifyWheelAvailable() {
+        console.log('[IG-BulkTools] wheel: lanzando aviso (marca + toast + beep)');
         try { addTitleMark(WHEEL_TITLE_MARK); } catch (_) {}
         try { showToast(T.wheelAvailableAlert, 'warn', 0); } catch (_) {}
         try { playWheelAlert(); } catch (_) {}
-        await sleep(50);
-        try { (typeof unsafeWindow !== 'undefined' && unsafeWindow.alert ? unsafeWindow.alert : window.alert)(T.wheelAvailableAlert); }
-        catch (_) { try { window.alert(T.wheelAvailableAlert); } catch (__) {} }
     }
 
     // Tras la recarga post-giro, vuelve a mostrar el premio en un toast. El
@@ -4396,10 +4390,11 @@
             try { refreshWheelLine(); } catch (_) {}
             if (!hay) continue;
 
-            // Se espera a que cierres el alert(): recargar con el dialogo
-            // delante lo dejaria a medias, y ademas la recarga es lo que trae el
-            // popup para girar, asi que llega justo cuando vas a usarlo.
-            await notifyWheelAvailable();
+            notifyWheelAvailable();
+            // Margen para que el doble toque termine antes de que la recarga se
+            // lleve la pagina por delante. Y las guardas de siempre: no se
+            // recarga con la cola corriendo ni con un dialogo propio abierto.
+            await sleep(2500);
             while (running || isUserBusy()) await sleep(30000);
             try { location.reload(); } catch (_) {}
             return;
