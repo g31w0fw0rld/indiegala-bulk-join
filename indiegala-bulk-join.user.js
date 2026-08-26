@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Bulk Tools (giveaway ticket queue + store links)
 // @namespace    http://tampermonkey.net/
-// @version      1.10.1
+// @version      1.10.2
 // @description  Unified ticket queue for Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another; add, remove and reorder mid-run, and tickets you cannot afford wait instead of killing the run. GalaSilver widget, prize checking, wheel alerts, remembered filters, every listing page in one. On store product pages it adds GG.deals and PCGamingWiki title-search buttons. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -50,7 +50,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.10.1';
+    const SCRIPT_VERSION = '1.10.2';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     // La advertencia de automatizacion solo aplica al modulo de giveaways. En la
     // tienda este script no automatiza nada —pone dos enlaces— y avisar ahi de un
@@ -192,7 +192,7 @@
             widgetRememberFilters: 'Recordar filtros de búsqueda',
             widgetRememberFiltersTooltip: 'Guarda el orden, el filtro de nivel, el texto de búsqueda y la página actual, y los re-aplica al recargar. Se sobrescriben cuando los cambias. Si la página guardada ya no existe, vuelve a la 1.',
             widgetLoadAll: 'Cargar todas las páginas',
-            widgetLoadAllTooltip: 'Trae a esta página el resto de las páginas del listado, respetando el orden y el filtro de nivel que tengas puestos: una petición por página, con pausa, y solo al propio Indiegala con tu sesión —lo mismo que pulsar en su paginación—. Las tarjetas llegan como las de aquí, así que la cola, el ⚠×N y el ✕ funcionan igual. Con la casilla puesta se hace solo en cada carga de la página, incluida la recarga que hace el vigilante de la ruleta. No se carga nada mientras haya ruleta por girar, mientras corra la cola, ni cuando estás viendo resultados de búsqueda (ahí Indiegala ya te los da todos de una vez). Como la página guardada deja de tener sentido con todo cargado, "Recordar filtros" no la reaplica mientras esto esté marcado.',
+            widgetLoadAllTooltip: 'Trae a esta página el resto de las páginas del listado, respetando el orden y el filtro de nivel que tengas puestos: una petición por página, con pausa, y solo al propio Indiegala con tu sesión —lo mismo que pulsar en su paginación—. Las tarjetas llegan como las de aquí, así que la cola, el ⚠×N y el ✕ funcionan igual. Con la casilla puesta se hace solo en cada carga de la página. No se carga nada mientras haya ruleta por girar, mientras corra la cola, ni cuando estás viendo resultados de búsqueda (ahí Indiegala ya te los da todos de una vez). Como la página guardada deja de tener sentido con todo cargado, "Recordar filtros" no la reaplica mientras esto esté marcado.',
             loadAllWorking: 'Trayendo página {i} de {n}…',
             loadAllDone: '{pages} páginas en una · {n} sorteos',
             loadAllNone: 'Una sola página: no hay más que traer',
@@ -214,8 +214,11 @@
             libWonStatus: '🎉 ¡Ganaste {n} premio(s) hoy!',
             winWidgetTitle: '🎉 ¡Premios ganados hoy! ({n})',
             libElementNotFound: 'No encontré un elemento de la biblioteca a tiempo. Revísalo manualmente.',
-            wheelAvailableAlert: '🎡 ¡La Wheel of Fortune cambió de estado (puede estar disponible para girar)! Atiéndela ahora para que no se te pase. Este aviso se queda hasta que lo cierres.',
+            wheelAvailableAlert: '🎡 ¡La Wheel of Fortune cambió de estado (puede estar disponible para girar)! Atiéndela ahora para que no se te pase.',
             toastSticky: 'Clic para cerrar este aviso',
+            wheelCountdown: '🎡 Próxima ruleta en {v} ({h})',
+            wheelReady: '🎡 Ruleta disponible ahora',
+            wheelCountdownTip: 'El día de Indiegala empieza a las 00:00 UTC, que en tu zona son las {h}. La hora NO la publica el sitio en ninguna parte —ni en la página, ni en su JS, ni en los datos de tu cuenta—, así que es lo que se supone; el script apunta en la consola la ventana en la que ve aparecer la ruleta, y si no cuadra con esa hora, se sabrá.',
             wheelSpinWon: '🎡 Ruleta: ganaste {prize}',
             wheelPrizeAfterReload: '🎡 Ruleta: ganaste {prize} · saldo actualizado',
             wheelReloadNotice: '🎡 Ganaste {prize} · al cerrar se recarga para actualizar tu saldo',
@@ -318,7 +321,7 @@
             widgetRememberFilters: 'Remember search filters',
             widgetRememberFiltersTooltip: 'Saves the sort order, level filter, search text and current page, and re-applies them on reload. Overwritten whenever you change them. Falls back to page 1 if the saved page no longer exists.',
             widgetLoadAll: 'Load every page',
-            widgetLoadAllTooltip: 'Pulls the rest of the listing\'s pages into this one, keeping the sort order and level filter you have set: one request per page, spaced out, and only to Indiegala itself with your session — the same thing clicking its pagination does. The cards arrive like the ones already here, so the queue, the ⚠×N and the ✕ work the same. With this ticked it happens on its own on every page load, including the reload the wheel watcher does. Nothing is fetched while there is a wheel to spin, while the queue is running, or while you are looking at search results (Indiegala already hands you all of those at once). Since a saved page makes no sense once everything is loaded, "Remember search filters" does not re-apply it while this is ticked.',
+            widgetLoadAllTooltip: 'Pulls the rest of the listing\'s pages into this one, keeping the sort order and level filter you have set: one request per page, spaced out, and only to Indiegala itself with your session — the same thing clicking its pagination does. The cards arrive like the ones already here, so the queue, the ⚠×N and the ✕ work the same. With this ticked it happens on its own on every page load. Nothing is fetched while there is a wheel to spin, while the queue is running, or while you are looking at search results (Indiegala already hands you all of those at once). Since a saved page makes no sense once everything is loaded, "Remember search filters" does not re-apply it while this is ticked.',
             loadAllWorking: 'Fetching page {i} of {n}…',
             loadAllDone: '{pages} pages in one · {n} giveaways',
             loadAllNone: 'A single page: nothing else to fetch',
@@ -340,8 +343,11 @@
             libWonStatus: '🎉 You won {n} prize(s) today!',
             winWidgetTitle: '🎉 Prizes won today! ({n})',
             libElementNotFound: 'Could not find a library element in time. Please check manually.',
-            wheelAvailableAlert: '🎡 The Wheel of Fortune changed state (it may be available to spin)! Go attend it now so you don\'t miss it. This notice stays until you dismiss it.',
+            wheelAvailableAlert: '🎡 The Wheel of Fortune changed state (it may be available to spin)! Go attend it now so you don\'t miss it.',
             toastSticky: 'Click to dismiss this notice',
+            wheelCountdown: '🎡 Next wheel in {v} ({h})',
+            wheelReady: '🎡 Wheel available now',
+            wheelCountdownTip: 'Indiegala\'s day starts at 00:00 UTC, which in your timezone is {h}. The site states that hour NOWHERE —not on the page, not in its JS, not in your account data— so it is an assumption; the script logs to the console the window in which it sees the wheel show up, and if that does not match, you will know.',
             wheelSpinWon: '🎡 Wheel: you won {prize}',
             wheelPrizeAfterReload: '🎡 Wheel: you won {prize} · balance updated',
             wheelReloadNotice: '🎡 You won {prize} · closing it reloads the page to refresh your balance',
@@ -383,8 +389,10 @@
                 '• "Revisar premios" abre tu biblioteca en otra pestaña y la recorre: Giveaways → Completed to check → Check all → Completed won.',
                 '• Anuncia los premios terminados hoy en un widget dentro de la página, con enlaces, beep y contador en el título de la pestaña. Una sola vez por premio.',
                 '▸ Wheel of Fortune',
-                '• Recarga /giveaways cada 15 min mientras la cola está parada, para avisarte si la ruleta cambia de estado.',
-                '• El aviso no interrumpe: un toast que se queda hasta que lo cierres, un sonido y una marca 🎡 al principio del título de la pestaña, que es lo que se ve desde otra pestaña. La marca se va al girar. El sonido depende del navegador: sin haber tocado antes la página puede bloquearlo, y por eso nunca es el único aviso.',
+                '• Pregunta cada 15 min si la ruleta cambió de estado, al mismo sitio del que Indiegala lo saca para pintar su menú, y sin recargar la página. Solo recarga el día que sí hay ruleta —el popup para girarla lo monta el sitio al cargar—, y lo hace después de avisarte.',
+                '• El aviso son tres cosas a la vez: un doble toque de sonido, una marca 🎡 al principio del título de la pestaña —puesta ANTES del diálogo, y lo que se ve desde otra pestaña— y un cuadro de diálogo que hay que cerrar. La marca se va al girar.',
+                '• Sobre el sonido: los navegadores no dejan sonar a una página con la que aún no has interactuado, así que tu primer clic o tecla lo desbloquea, en silencio y sin que se note. A partir de ahí suena aunque estés en otra pestaña, porque la página sigue viva —el vigilante ya no la recarga—. El único aviso que no puede sonar es el de la primera carga, si abres la página y la ruleta ya está ahí; ese lo tienes delante de todas formas.',
+                '• El widget lleva la cuenta atrás de la próxima ruleta, con la hora en tu reloj, y pasa a decir «disponible ahora» cuando la hay. Se repinta sola cada medio minuto. Ojo con la hora: Indiegala no publica en ninguna parte cuándo reinicia la ruleta —no está ni en la página, ni en su JS, ni en los datos de tu cuenta—, así que el script cuenta hacia las 00:00 UTC, que es cuando empieza su día, y apunta en la consola la ventana en la que ve aparecer la ruleta por si algún día no cuadra.',
                 '• Tras girar te dice el premio y recarga al cerrar tú el popup, para que el saldo quede al día. Nunca recarga con la cola corriendo ni con un diálogo abierto.',
                 '▸ Opciones del listado',
                 '• Recordar filtros de búsqueda (orden, nivel, texto y página), ocultar los giveaways en los que ya tienes boleto y elegir el idioma del script (es/en/Auto).',
@@ -424,8 +432,10 @@
                 '• "Check prizes" opens your library in a new tab and walks it: Giveaways → Completed to check → Check all → Completed won.',
                 '• Announces prizes that ended today in a widget inside the page, with links, a beep and a tab-title badge. Once per prize.',
                 '▸ Wheel of Fortune',
-                '• Reloads /giveaways every 15 min while the queue is idle, to alert you if the wheel changes state.',
-                '• The notice does not interrupt: a toast that stays until you dismiss it, a sound and a 🎡 mark at the start of the tab title, which is what you can see from another tab. The mark goes away once you spin. The sound is up to the browser: without a previous interaction on the page it may block it, which is why it is never the only channel.',
+                '• Asks every 15 min whether the wheel changed state, from the same place Indiegala itself reads it to draw its menu, and without reloading the page. It only reloads on the day there IS a wheel — the popup to spin it is built by the site on load — and it does so after alerting you.',
+                '• The notice is three things at once: a double chime, a 🎡 mark at the start of the tab title —set BEFORE the dialog, and the part you can see from another tab— and a dialog you have to dismiss. The mark goes away once you spin.',
+                '• About the sound: browsers do not let a page play audio until you have interacted with it, so your first click or keypress unlocks it, silently and unnoticed. From then on it plays even while you are in another tab, because the page stays alive — the watcher no longer reloads it. The only notice that cannot play is the one on the very first load, if you open the page and the wheel is already there; that one is right in front of you anyway.',
+                '• The widget counts down to the next wheel, with the time on your own clock, and switches to «available now» when there is one. It redraws itself every half minute. About that hour: Indiegala states nowhere when the wheel resets —not on the page, not in its JS, not in your account data— so the script counts towards 00:00 UTC, which is when its day starts, and logs to the console the window in which it sees the wheel show up, in case it ever does not match.',
                 '• After a spin it tells you the prize and reloads when you close the popup, so the balance is up to date. It never reloads while the queue runs or a dialog is open.',
                 '▸ Listing options',
                 '• Remember search filters (sort, level, text and page), hide giveaways you already entered and choose the script language (es/en/Auto).',
@@ -565,11 +575,14 @@
     const LIBRARY_URL = 'https://www.indiegala.com/library';
     const AUTOCHECK_HASH = 'ig-bulk-autocheck';
 
-    // Vigilante de Wheel of Fortune: en /giveaways, mientras no haya cola
-    // corriendo, se auto-refresca cada CFG.wheelCheckIntervalMs y compara el
-    // elemento del menu de usuario contra esta firma base ("elemento en
-    // cuestion" = estado actual sin novedad). Si difiere, asumimos que la rueda
-    // cambio de estado (disponible) y avisamos con notifyWheelAvailable().
+    // Vigilante de Wheel of Fortune. Al cargar compara el elemento del menu de
+    // usuario contra esta firma base ("elemento en cuestion" = estado actual sin
+    // novedad); si difiere, la rueda esta disponible y se avisa con
+    // notifyWheelAvailable().
+    //
+    // A partir de ahi NO recarga: pregunta cada CFG.wheelCheckIntervalMs al
+    // endpoint del propio sitio (ver startWheelWatcher). La recarga solo vuelve
+    // el dia que si hay ruleta, y detras del aviso.
     const WHEEL_SELECTOR = '.menu-fortune-wheel';
     const WHEEL_BASELINE_HTML = '<li class="menu-fortune-wheel"><span><i aria-hidden="true" class="fa fa-gift"></i>Wheel of Fortune</span></li>';
 
@@ -589,26 +602,28 @@
     //                  le dice a checkWheelOnce() que aprenda en vez de avisar.
     //   lastPrize   -> premio pendiente de reanunciar tras la recarga (el toast
     //                  del giro muere con el reload). Se limpia al anunciarlo.
+    //   lastEmptyAt -> ultima vez que se miro y NO habia ruleta. Con la primera
+    //                  vez que si la hay acota la ventana del reinicio, que es
+    //                  lo unico que puede desmentir WHEEL_RESET_UTC_HOUR.
+    //   announced   -> ya se apunto esta aparicion, para no repetir la linea de
+    //                  consola en cada recarga del vigilante.
     const WHEEL_STATE_KEY = 'ig-bulk-wheel-state';
     // Marca que el aviso de ruleta pone al principio del <title> de la pestana.
     // Es lo unico del aviso que se ve con la pestana en segundo plano, que es
     // justo cuando el vigilante trabaja.
     const WHEEL_TITLE_MARK = '🎡';
-    // Sonido del aviso de ruleta. Pega aqui el data: URI COMPLETO, con su
-    // cabecera y todo: 'data:audio/mpeg;base64,SUQzB…' (o audio/ogg, audio/wav,
-    // segun el fichero). Va inline a proposito: un userscript no tiene donde
-    // alojar un .mp3, y un enlace externo se caeria el dia que muera el hosting.
+    // Hora UTC a la que se da por reiniciada la ruleta. Es una SUPOSICION, no un
+    // dato: Indiegala no publica esa hora en ninguna parte —se busco en el HTML
+    // del listado, en sus cuatro bundles de JS y en `/ajax/user/get-data`, que es
+    // de donde el propio sitio saca `fortune_wheel_status`, y no hay ni un
+    // «proximo giro» ni un contador—. 00:00 UTC es el arranque del dia del sitio
+    // y lo que encaja con lo observado, pero mientras siga sin comprobarse, la
+    // cuenta atras lo dice en su tooltip en vez de venderlo como un hecho.
     //
-    // Dejarlo vacio no rompe nada: se usa el beep sintetizado de Web Audio, que
-    // es tambien lo que suena si el navegador o la CSP del sitio rechazan el
-    // data: URI. El aviso nunca depende de que el sonido llegue a sonar.
-    const WHEEL_ALERT_SOUND = 'data:audio/mpeg;base64,//uUxAADwAABpAAAACAAADSAAAAETEFNRQMACQgABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//uUxAADwAABpAAAACAAADSAAAAETEFNRQMACQgABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//uUxAADwAABpAAAACAAADSAAAAETEFNRQMACQgABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//uUxAADVWmgxkS9OALWOB0CmJAAGAALqL2Eair20C9RmpF72XmEZAdFQsOE6BdKO/ItOJyARg8CJajzLAaZ+JNdK1VGECOsmodIh0cE4oIzhVESj4nFBdZl6BOT2EaiazLR4kFZRVo82gndZOF1ezUVRHjaBeUotMNqL1kLlF6BdZky88ToCM4hPm0C9R2CcmnNoCMoVFQsJBWQF0kLTm0akW1FyyE+JxQRlCqIlNDgkFakXsTSiwjUTWQmjI+JwoHA0tD9utByQwJBMolHcQCyyda5I8dOEgBAwKIzXMFGFPiR4gLMAEQBiCBBiRIoxRAgCjKNRGxIkUjBBrmjCTHhNHBQEAoSIKJ1RdC0VagKATNzUzzk5VEhWVOIAQFBteRHJGQQICcjJxGfnDxV0RrNiijGzXRtpvuRAKwTe2SPZNpx6MuJy6IkCgn1Ik8SdduCMuBYjJjACHpoEGQnaPZiMNhdEyIFVIblJ6K9bI5tkBIKGVExBTUUDAAkIAAQ//uUxAAAFrErR7nKgBKdJ6XLu0AAmCoMCgeF4mAoGAwFYC1dNtvc2aEYy/ueZmIkHI8O/rG9cOd3M6qqTHQjJiEaJgZ8AwGJReUieQaBpkigYQJIGdS+UXRQRSAy+FwNPxEDxfXKJiGtQNE8Dfp7Ay0GhCoXViNA5yWn+RcnxrgCg0AYRgBAxVTFBP+GZBvGBhQEBtAgmIQgYLD9JmoK/wMQgULFBmCIAYRBYCgDHsDAoDIwv5g7//EEyutTKUxvI4nDRmaibP//roDAFUkYRNxidysS56oCUyBoCBwLGLTCHW41mFYRBwDKmD+jpE6kNIkdLpLFh1lA4cOHzssEWLZFQs6ARxAxKwBgEKmJxHSHgGwWzUoi1j8XThcLx7nzucnQzoETkdpyXDpwuTh4d0hZ44fOnzmPxCF8WoMvAHHyXGkSh0vnj54hp8bgXLjPEuXigRci0l0SmtIgRKjGoNf1erUYlS/7zA+p5J75UQ+zrTEFNRQMACQgABAAAAAA//uUxAAD1NU9Jg7g+QLfJKMB3LcgKAcV9GJ51GpPLE3Ya6qoWAFAAaGO88H2KNGEYJhwCMjfOIP+5MHQf8DwBAdxvI3RUD4Rqgg6DIPchyjAwiTJQA1OHmmaCXOTA0/L4doozQ0TofQUPvnQXIDpL7dyQiK9Jdcqkpr15/vf5/ZPJH/k7+SR/38k0lk7+SaijLpmlEZdSMxuMfGaONRlnSC0bfCgjMbF5YaFQKlAAQKly40G//+Jxj/xMMkxOgwB0xSQAVpvq7Kd60kOSA0wRAQw6A84ZGU91GUwYAQWBFkbyuBTKdwa5KnoNgyDAEBynS72lJUSRsrb//+VgKYkAKVogVgINDswR+USYDB77o/0L5vkogXLfB8mdpHs6Zw+Sjf+pypwiuVlqceiqpwo3/s7fJ8UkhY98EkvfBJB8Wds6fN8fZwiqisioV5BC///+px6nCjSjanHqcqNKcDoDsGYHYGgHQIxEbDWI0Og6jr//4vJiCmooGABIQAAgAAA//uUxAABE40nKm69XkLfp2Rd7bZ4AgAAIKAFgbKhnb8MxR+oU6IjAIEBCYNs2d0mGYJgIrmgfiRzTO96m4hSSeJ37lyAL12m+/c9yjAQWgEhDeqiTyL/NBfuFKDLSjTkQBTQPSQd9PTX6a8+ETpn/C4FkwLUlJJn9vRS5Op2nr6mQ2V4vND3yzSGQrFYKYDlybzg2Z7i4bb28NBz214YcNC8GAyFBwSBEOIs7//0Gn1dUAFAACAkBolUpe1R86VrDeOkvhutIgQMKwpU1zRDDAlAZQMRTTPkyZ7OVcRj1bXxZw6lF7lOXBvuQpxB8GQb5Y8jYFVRow8OdYsBBioQztnKuHTMPAXKchy4Pg//+D4Mch/JK/0lZMICMzIKkrIvZJJZN/yeSSdkzJ2Qsjf/3/k/v9JH+VK+Kt7oC01GaCMUVFG4xG1cUTOAwdjcYZ0p8SseolIlI9BeHpLQ1j1Aei0e3//GYdP/GZMQU1FAwAJCAAEAAAAAAAAAAAAAAAAA//uUxAAAFIE7KE48/kK0qGRpndIpDABCsGRiFOGsRhk6sdfaeqI6J5YJhlwUnMWwGJnzA4HKwEIQGYLBaa5goSGLBQYWBwOBD4q4a488lksnk0lk3tl9d7ZQCXBJPLuLIJ5OWnI5blwOrFA0YfL6KhjVBRUdHGYPcuDIMVVLANCgNcv3Lg/3I9o/aOhjQhzSvNH7QvtKHJiQwxsPDQllNOWd/P0RK8kmmAaIQHw6IAHB8QCH//5T/5RpAAQCQCcAmBORkb5Pa2BTJoaicedcwFQssdIxrUgLAyykCYVMKw1YjEj8LGx1h+aYLEgCFQ5SBcJnjluXBnuVBnuVBkHKwqqKxIquQrB8Hwe5CKv+yKTP+qeTyZkck9/f+BkU4B9cPP/yFIQXOLkFyC5B/kLIUhBcwdOPw/CLkLDoA6chSFIQhBchCj8Lkj+Lki5oi4IggueQkhR+H6Qn/0k0WeqtbOl310j2iyYgpqKBgASEAAIAAAAAAAAAAAAAAAAAAAAA//uUxAAAlflLIAx6sUKmKWQZ59aYH8ulLFHJiBWUsBX41RoEZpIm/cAyZejVVSCEZgEAEGCqP2bFInZgqgXmAgAMWbSvSsbu2Vdi7l2LtbK/zVGSskaq/r/tVXY2VsrZPbIuxsiBKDUV1YIP+DYMg5yvVg8PKAarwDwuHnh5Q8niCuLvBvOILi7jFjFGJj/i5R+giF4CgEFzCLj+LnIUXOQhCEKQo/D8OaCQjBQiDnjmkoSpKjmEqS8c4lSU///PH//4/nywgYGAcRxd6jTfKTeVmKLKlC/Jta1x/nwYe58GqrFgA0sAbGBsT+ajBPxYA3EQBCN8AXlYwLBsc2TY/NBNDY4pPTApBpmgaZo9MdNpo0hPjTTRo9MJn/4GCGSBqMXYMBHjEEFBixdiCgguILDEEF+IKcXXF0LsAInBY/F0MQXYgqLoYoxRi4gsJyAwEIgChKOdHNJUc0c8lSXJUlJLkt//2F2MSr/1QwwxUxBTUUDAAkIAAQAAAAAAAAAA//uUxAABlTVJIO49vkLAqWOV3TZwQAAAABAJCxpLKrLhcfRgLDX7gxFJ0Ke5H4cnoOcsYBhgkEmLgSbu1pnwXAkJmAgEyBU5WAh4DMlfySv+/8bfKMUcZdSNxhyYOcj/gxVdyfg1yXJ9yoO+DXI9yfU+p/1OjAxdDAap5TpTv/U+p42f/zaNs2h6ubRsGxx6B6DYTCaNFM9MilJjmim00mxsGgafNBNJmAB4SESER8R0SAkf//7jOOg6bfVViMhAKwwclFN5FhovBMufrcuaemu19EOIs7kz5ptFgEzBoGjBtpzsE/TI0UzVEgSHLls4LlrTQbU85UGOUtODlp+p6TOStBnL4pJPg+D5f74Pl75s6Z2zlnCiLOmcs5asqZqyp2qGB2qk9U7VFSqnar6pVS//qk9U/+qT2rKkauqdUoriqKoJ3ACGK4qipFUVIrgnEVRWBOIkBAxICQI0tHqPccQW8YUjkci///K//+PQsTEFNRQMACQgABAAAAAAAAAA//uUxAAA1cVLIM9uk8K8qWNV7FZgBAAAECwGjps4Z8XbYZH1D1mRxp0AROldt+Yyoq/Sez8lYDZgpBGGwgUQYKQDSFaAyaWDZQmLBq0HJ+DKKhjK7G5rtksOM6Z2+DOHzZ0kY+fqmasqZqjV/auqT///U5U4U5Csud8Zf6KinCjfqcvg+fvim1/pGs7fP3y/3yfB8nIcpy/8ZEQEGFzvctyXJg34O9TuDpNBw3gKwQwQN4bg3eN4UF///x/IUl//4mpCAQGghVMFiJ/obMrSYCgBIkAjTw7OI2oAVNqJOBI4LgDeWAFiwDGYERkxmTo0mDEDEIZhxGqGMYKoGO9TtMf/bOgRbMX59s7Z2zl9mzLsbN7Zy+jZWyKdqdqfKzJj+p9MX//wiCQMEO8DwwvwMEgjxNQxRia4Yr8MViahikSvBgAwYAAiAQMdAEDAABhEAfCIA8LHgBiaBImRBWIKiCwuhBQXYxBdf/X6+MX6qvwbJZMQU1FAwAJCAAEAAAAA//uUxAABlV1LHO5iswLeqSMB7k54FAAAABAHGCjVRkS6lvO03N8H6dlrrjrfc5n8Tf5y4OLnmGg0ZTmh9/TGxSmeIFky561C6apFSeqb1Svkzt81EHw98mcvkzh8nxfJ82cs4fN8ffF8Gds5fF8k2//4GFguBpgL4YbhdYVnFVDV4auFY4q4rArMNWw1YGrhWRWRVAwICrxWIauDVgqw1aKwGroatG8BUJDeigcb43RQWN6N//oVqvtR7Lor+GuUJA4iIAt/31dQvgrxMNuC5kiJYDACWrxpPVgxeZI9nZgDAJFgC0wdCvjVSJ2ML4CwxGGwEIAABkCa8E2ECk2fQKTYTaTaTbfFNpnTO022re1UsBBq6pVTtXat7VlSNWauVgD2q+1X///LAEMTM44gRisCFYF//LAEMCgT1OVGlOPRXUaRXRU//Ua9FVFVRstN/oFIFgQLAYWFpE2P9Avy0haVNlNj/+AjwCl4XCcRbiK///x+//4udMQU1FAwAJCA//uUxAABlP1JGg9mssLGqWPdntI4KwMKZZJbtiTPpMAgCy+D9qCw848ZUUbqu5y0Ki+6FXmDGPIbdaVJgxgRAsFOJ0CAJI8rRUT9RhRj13IEmzoUNmbOu1drZF2eWC/XaX49dwuhdiCwuxiYuxifwjFAOKC8GAiDAT4eUPNDzhZGHnCyMLI4efw84eYPNh54WRhETBZGFkYecPKHlh5w8kLIYecPJEqAwuOwGAViVCVxNYYrEr///xuf/8UAIAKB8wUBqMZj7BmHuGPA/LoIcReTWGes5mH8kyVZgcBxh2iZrXjxkiHYCChK9URfhp5WAHtUau1Zqklg34Mg1T8GQelZJaJplC0qHpJRPh/vl75Pl7O2cM5///zBcmCwC6bPlpi0xaVAr3wfJ82dM5Z16SLOkknz98mcs7fJ8+IvCIoBQsFw3/5KgYZGILECGKKXJUc8c4UsQcUkKWJYlRzZL/ZJS1LvEUp7Ur7utgueZMQU1FAwAJCAAEAAAAAAAAAA//uUxAABlXUHGq5p84LLIKNhn2oABAAAcdBoGNJrvY2k0vVqE0sixGo0tyJF2HmT0LXvyYPB5jpen7F6boHBrQ4YgU6g+DmdM7LlPgzp8nzZwzt82d++DOWcs7fB8Xy9nCRjOXKg1yFPuxB6naDCnoOcpqzV2qtWLAEwM40JD9qlKwLV2rqkZ2zpnT4+zh8mde+D5vmzl8XwBId8Sz5a8tCyBHialqWpZ8teWZZ/lpyxljLFyfmy6Q1faVCrnXNt2AQIT8EY4QJI4q0Lq5SIRobP3heFAY4C5IHZg+SSIKPMA4A4wZRwzUpMfML0A8IgAEa+LiO2qdqypGqNVasm375M6fB8XxfB8mcvh7OXyfBNtnKp/9UntU9UzVfarByBCDFOhkOZDof9+mIp5aan1oO05bV1T//qnau1RUvtXao1YrAqn9U6pFSNW/ywRK0Kp1TqkVI1dU7Vvas1VqzV/fMwxIWTvn/vn7O2dvm+P++H//3piCmooGABIQAAgAAA//uUxAAClT1LHs7WfAKvqSMB2s+AACAAGDwmvNL3CVbA6mDSRYAKSbf5rvrdg74y+LOCwA5YA4wOe06a6AwPA9BFI6WHWfhwQtVVM1b/bm0pQ1d1C2agUMZ0zt8/fF8PfNnT4qIM6fL3w9nLOmcPh8ImQAbn8MNxV8VQqg1eA+IrOKoVgVgVgNXxWIrIqw1cA+IauFUGrIavDVgrAas4rGPwDDgZEfogGLlIQXMJWPwuTH7/+tWRpCSWyX/4hCxEQhgEAwYASLqCN4ZGtNUDjPQWSUlJA4AUIWqKLrQWumIYNg2ZGEae1dGZiCoYagOXISQBQHptFpk2U2C0ybKBS9fWmtCDnIg1aLOWcM4fD2ds4fD/aqWAB9U7VFTtX9UipvgYPMgG6R1/gPAEQw1bFWGrAGhCqDV4qw1aKzFYiLCKiKCKhcOAj4XCCLiLCLBcLEWxFwuEEUEUiKgavgxfxFBFhFP//+P///JRMQU1FAwAJCAAEAAAAAAAAAAAAAAA//uUxAAAE/EFI05l80LwKSOZ3c54DsgEggAOgIEkFP0+0Evw7bkvxDc+5TJYq4roafJ8HxfErABh0dnCSyZZAJWUmWyN/FTv9JH+f1/GTwJdg2Aae9BlyNOorp1Y19DGYw/7+P/JX9kskk/yb3K/4O8w1wffB/wbB0HQZBrQhyH/9e68vNC+09DBNUP/aP0MLRDV9DENQ9paP0O68vGmm00aCYNFNprmkkDTTSbTPg/Ovs8i5EAAAQPDIkGnguJRpWBdajbwP88q36FgKir9xpH1mrV09SsGzFIGj6K+CsUgg7asg4wF4lSKlVIqdqipXwZy+T5Pkzh8nxfBnL4vi+L5pHs79nL4Pmzp8Gdezp8HyfP/RUU4U4MLlwkuU59Tn/U49nDO2dM5fFJNnLOnxTbTafNnbO022cs4fL2cPh74FY8kmzpnSiKiD4M79nLOmc/4ucDNgXOLkIQXIQpCkKIRCAI/kIQn/r/jdG///iyExBTUUDAAkIAAQAAAAAAA//uUxAABFVVLHq7istKvKSQpx7fIQAAQODx+nId55XLUthlJR0nQcBn69om019X0fpyU9iwB5gctRnRj5h0BxtCIABwEw3ERWRWU59Rv3bWjBiYsHuT7lwfJ/chaUHuTBkGjdG+HDFAxQcUHG9hdYMPDDACJkDGIWwut4auFYFUKvDV4RAIrMNXisCrFX4ZUb2NwCwlDAw3RvjejdFAjeG54rwBoaDjhYxXiyRYgIrpKClRBaSkl///kLV/+JkQgsoJAANA8KVa4iyp+3KnnJhLoVGdqdyRwlVoDpo0rYv8rBBi9kHrbAVnsvwt5lcCwOyR/VTMmfx/IOcqDHKg+DHLg1kr/v4qR/5I/8kf+TP7J5KyGTv5JX99kX/7ZWygAniRNbN7ZWzLvbO2Y0zQTfTKYTZp//mimRSTTTCZTRpdMphMmjzRTSaNLphNppNphMDOAbojQjA6BHHQZxG4z//67b1L7q1KQU9wPqYgpqKBgASEAAIAAAAAAAAAAAAAA//uUxAAAlQEDGs5ls4LbqSMV3cpwUAAAEGNAQn2+jK3TnoYclzk0IjImhIivCXra0zCgbkX4KweY6dB8CfFaQK00kHxZyzp8nzZ0+TO2cQa5MHQf7setNnHptqIPizv3y9nb4vl6bb5vi+LOHz9UrVVTKlVMIIQ9xq6pywA1ZqypFSPmoi+D4Pizv3yfH3zZ2+bO0j0jGcCsKorxXFYVYq+Cd4JyCdivF0B2ghhdi4FohaBcC1C4FoF3/u/qACAxOBRKqGmPtPY8l0sNCYStyEM8SfeVdRcVx13NlaUWAbMG00OidrMUwaSfTZVna4iu1cQAHtXVK1T2cly2ds5Zz7OvU5RWUb9Rv1GlOfU5UaRXRWUbUaUaUaCgV/+iouFFQKmZ8xkpwpyiopwo2pwpw1Zqip2qNXVI1RU7VmrKkVM1RU7VRAABwHEUEUwuGAVfC4YRQRcLh8LhYXDiKxQAZQG4BvRuwwSNwbg3RQP//+WP/+OemIKaigYAEhAACAAA//uUxAADlLUBGA7XPALaICLFzT5qDh0KwIVgdtKNgFVd88rhb7cWYolIfMCQ8YAleu+gLAWGFpfnhOoFY6l+CycnSrf5NhAotN6Bfvmkioj7OnwZ2+D4+zh8mdJGM5SQfBFVTj1OFOFOVGlOEV0VVOfhEdgboB+EQd6nKjSnKnCKijanHqceo0iqiupwo0iopyo2o2o36nPhHyjajf+o0o0iupyo16janPqmEEBWB7VWqtUao1ZU/tVauIxYHQgEtOeFW1lKczH35i7D16KlcNNJnbEH0XmtQBA0oKxiyDn4qiUX0OhFYBqrVGrs7Z2kazlI18mrNVVKVgWqtX9q74qIpJKIPQ+b4vg+TOmdPmzpnb4e+b4vm+HtVVI1ZqpgAJ7ELV1SCEAqdUypVSjbBzDaG0NkHKNgbIOYbf4OUHLkHLkbQ2RscbfG2NkbA2xscbAOTja/GwDlGqNgbI2RtDZByjbGxxt8bf6l2su2M//2JiCmooGABIQAAgAAAAAA//uUxAAAFZUHIVWdgALKpaWXMcAAAkwAAAAGgDgUEHTMucByYHhl9GcNjm2+eKKujXhxt0A5h4eWA8729M7OTIRFq7VVTtXo6CMtLac/8bkkm+h+MNwg13VO4Ng+DoMgyDf+D/g31ruW5clgyDPg9TqDAsNFZFBztOXJfg+DINg9yoO/3Id5eEHuR/we5Kn3IdlyJI5cHuXB//BnwfB8GLUciD4OkkHqdr1diDIPcuDYOWlB0HyX/g3+hA1pHIKK2UgEAAAADRKJSMOlYFTwDS1JUs5JONW68YBhkCUDGRCYSggggQGFgQoiJbPs+Jg4CYwEBk6RCQt/PU8TjcXqRpi7OJufmZjlyJwNhK5hri730hcTqxF3jBYBdi/Hs2jg0FSJ5InJlKzBgFcWvKZ2F4RKTxj71FL33jd2pKX9hn61PANDB8vldDGIOeCmpZTflb8X8rMNVcqSxQ37lN////fjN69////fpr977N3lq5//DzzSExBTUUDAAkIAAQAA//uUxAAD1ZkjEB2MgAAAADSAAAAEZkXCLJFolLoLL2mI5mKrEnqWVLQr1XkAUHHB5oniCRgEcucwCzMFTAM1456AMyMgGSUZIhfKH05S2JaVg0ErCsRfmgZUoEmNAr7M6a9PRFrLOWcy6Zf2W3Iaf5/oewprUy7L+0jhLuh2af6NWt48///////////98/fPyy/HHL8atnlaNRqzWpqbLdWUy3LdLjzLKmtc1ll+8atnolcDQNZUFeWDvEruHeVO8GkxBTUUDAAkIAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
-    // Volumen del sonido de arriba (0–1). En 1 a proposito: el fichero pegado
-    // viene grabado bajo —su pico esta al 14% de la escala, medido sobre el
-    // MP3 decodificado—, asi que bajarlo aqui lo deja practicamente inaudible.
-    // Si algun dia se cambia el sonido por uno normalizado, esto se baja.
-    // El beep sintetizado no lo usa: lleva su volumen dentro.
-    const WHEEL_ALERT_VOLUME = 1;
+    // checkWheelOnce() apunta la ventana en la que ve aparecer la ruleta (entre
+    // la ultima vez sin ella y la primera con ella) y la saca por consola: eso es
+    // lo que puede desmentir este 0 sin tener que mirar a mano.
+    const WHEEL_RESET_UTC_HOUR = 0;
 
     // Cada cuanto comprueba el vigilante del titulo que la marca sigue puesta.
     // 3 s: el titulo solo lo reescribe el sitio en sus navegaciones AJAX, no es
@@ -1687,6 +1702,16 @@
                 font-size: 12px; color: #80d8ff;
                 font-weight: bold; margin-bottom: 8px;
             }
+            /* Cuenta atras de la ruleta. Gris mientras solo informa, ambar
+               —el mismo de "hay algo que hacer" del resto del widget— cuando ya
+               esta disponible: ahi deja de ser un dato y pasa a ser un aviso. */
+            #${BALANCE_WIDGET_ID} .ig-bw-wheel {
+                font-size: 11px; color: #9aa4b2;
+                margin-bottom: 8px; line-height: 1.3; cursor: help;
+            }
+            #${BALANCE_WIDGET_ID} .ig-bw-wheel.ig-bw-wheel-now {
+                color: #ffcf66; font-weight: bold;
+            }
             #${BALANCE_WIDGET_ID} .ig-bw-btn {
                 display: block; width: 100%;
                 padding: 8px 10px;
@@ -1966,6 +1991,37 @@
     }
 
     // =============================================
+    // RELOJ DE LA RULETA
+    // =============================================
+
+    // Milisegundos hasta el proximo reinicio. En UTC a proposito: el reloj del
+    // sitio no es el del navegador, y calcularlo con la hora local es el fallo
+    // que ya se pago en el panel de Bing Rewards.
+    function msToWheelReset(now) {
+        const d = new Date(now.getTime());
+        d.setUTCHours(WHEEL_RESET_UTC_HOUR, 0, 0, 0);
+        if (d.getTime() <= now.getTime()) d.setUTCDate(d.getUTCDate() + 1);
+        return d.getTime() - now.getTime();
+    }
+
+    // «3h 12m» / «12m». Sin segundos: la linea se repinta cada 30 s y un contador
+    // al segundo pide un intervalo mas fino para nada.
+    function fmtWheelCountdown(ms) {
+        const s = Math.max(0, Math.floor(ms / 1000));
+        const h = Math.floor(s / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        return h > 0 ? h + 'h ' + String(m).padStart(2, '0') + 'm' : m + 'm';
+    }
+
+    // La hora del reinicio en el reloj DEL USUARIO, que es la que sirve para
+    // decidir. Sin locale fijo: el del navegador es el suyo.
+    function wheelResetLocalTime(now) {
+        const d = new Date(now.getTime() + msToWheelReset(now));
+        try { return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+        catch (_) { return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
+    }
+
+    // =============================================
     // TOAST (notificaciones no-bloqueantes)
     // =============================================
     // `durationMs` opcional: por defecto 4,5 s. Un 0 (o negativo) deja el
@@ -1998,37 +2054,60 @@
     // AVISOS: BEEP Y MARCA EN EL TITULO DE LA PESTANA
     // =============================================
 
-    // Beep de aviso (Web Audio, best-effort). `steps` es la melodia como
-    // [frecuencia Hz, offset en segundos]; `tailSec` es cuanto tarda en
-    // apagarse desde el ultimo tono.
+    // Beep de aviso (Web Audio). `steps` es la melodia como [frecuencia Hz,
+    // offset en segundos] y `decaySec` lo que tarda en apagarse CADA nota.
+    //
+    // La envolvente se re-ataca en cada nota y no una sola vez al principio: con
+    // una envolvente unica, una melodia de mas de dos notas sale con la ultima
+    // casi inaudible, que es justo lo que estropea un aviso de dos toques.
     //
     // Sin un gesto previo del usuario EN esta carga el navegador crea el
     // contexto suspendido y el beep no suena: resume() lo pide, y si el
     // navegador dice que no, el aviso sigue viendose en el titulo de la
     // pestana. Por eso el sonido nunca es el unico canal.
-    function playBeep(steps, volume, tailSec) {
+    // UN solo contexto para todo el script. Antes se creaba uno por beep y solo
+    // se cerraba en `onended`, que con el contexto bloqueado no llega nunca:
+    // Chrome permite 6 contextos por pagina, asi que a partir del sexto aviso
+    // fallaban tambien los que si podian sonar.
+    let audioCtx = null;
+    function getAudioCtx() {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return null;
+        if (!audioCtx || audioCtx.state === 'closed') audioCtx = new Ctx();
+        return audioCtx;
+    }
+
+    function playBeep(steps, volume, decaySec) {
         try {
-            const Ctx = window.AudioContext || window.webkitAudioContext;
-            if (!Ctx) return;
-            const ctx = new Ctx();
-            const close = () => { try { ctx.close(); } catch (_) {} };
-            if (ctx.state === 'suspended') { try { ctx.resume(); } catch (_) {} }
+            const ctx = getAudioCtx();
+            if (!ctx) return;
+            console.log('[IG-BulkTools] beep: contexto', ctx.state);
+            if (ctx.state === 'suspended') {
+                try {
+                    ctx.resume().then(
+                        () => console.log('[IG-BulkTools] beep: resume() aceptado, contexto', ctx.state),
+                        (e) => console.warn('[IG-BulkTools] beep: resume() RECHAZADO —', e && e.name,
+                            '— el navegador no deja sonar sin un gesto tuyo en esta carga')
+                    );
+                } catch (_) {}
+            }
             const o = ctx.createOscillator();
             const g = ctx.createGain();
             o.type = 'sine';
             o.connect(g); g.connect(ctx.destination);
             const t0 = ctx.currentTime;
             const last = steps[steps.length - 1][1];
-            steps.forEach(([hz, at]) => o.frequency.setValueAtTime(hz, t0 + at));
-            g.gain.setValueAtTime(volume, t0);
-            g.gain.exponentialRampToValueAtTime(0.0001, t0 + last + tailSec);
+            g.gain.setValueAtTime(0.0001, t0);
+            steps.forEach(([hz, at]) => {
+                o.frequency.setValueAtTime(hz, t0 + at);
+                g.gain.setValueAtTime(volume, t0 + at);
+                g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + decaySec);
+            });
             o.start(t0);
-            o.stop(t0 + last + tailSec + 0.02);
-            o.onended = close;
-            // Red de seguridad: con el contexto bloqueado por el navegador el
-            // oscilador nunca termina y onended no llega, asi que el contexto
-            // se quedaria abierto. Solo cierra si sigue suspendido.
-            setTimeout(() => { if (ctx.state === 'suspended') close(); }, (last + tailSec) * 1000 + 3000);
+            o.stop(t0 + last + decaySec + 0.02);
+            // El contexto NO se cierra: es compartido y se reutiliza. Los nodos
+            // sueltos los recoge el navegador al terminar el oscilador.
+            o.onended = () => { try { o.disconnect(); g.disconnect(); } catch (_) {} };
         } catch (_) {}
     }
 
@@ -2037,37 +2116,92 @@
         playBeep([[880, 0], [1175, 0.12]], 0.06, 0.28);
     }
 
-    // Ruleta disponible: suena el fichero de WHEEL_ALERT_SOUND si hay uno, y si
-    // no —o si el navegador se niega a reproducirlo— cae al beep sintetizado.
-    //
-    // La caida tiene que ir en el `catch` Y en el rechazo de la promesa de
-    // play(): un data: URI mal formado revienta al construir el Audio, pero un
-    // bloqueo por autoplay o por la CSP del sitio no lanza nada, solo rechaza la
-    // promesa, y sin ese segundo camino el aviso se quedaria mudo sin que nadie
-    // se entere.
-    function playWheelAlert() {
-        if (!WHEEL_ALERT_SOUND) { playWheelFallbackBeep(); return; }
-        try {
-            const a = new Audio(WHEEL_ALERT_SOUND);
-            a.volume = WHEEL_ALERT_VOLUME;
-            const pr = a.play();
-            if (pr && typeof pr.catch === 'function') {
-                pr.catch((e) => {
-                    console.warn('[IG-BulkTools] wheel: sonido rechazado, uso el beep:', e && e.name);
-                    playWheelFallbackBeep();
-                });
-            }
-        } catch (e) {
-            console.warn('[IG-BulkTools] wheel: sonido no reproducible, uso el beep:', e);
-            playWheelFallbackBeep();
-        }
+    // Diagnostico del sonido. Existe porque «no suena» se ve igual por tres
+    // motivos distintos —que no se llegue a intentar, que el navegador lo
+    // bloquee, o que suene y no se oiga—, y sin distinguirlos se arregla el que
+    // no era. Aqui ya se pago una vez: se normalizo un MP3 flojo dando por hecho
+    // que el problema era el volumen, y lo que decia la consola era
+    // `NotAllowedError`.
+    const SND = '[IG-BulkTools] sonido:';
+
+    // Estado del navegador que decide si un sonido puede sonar, leido en el
+    // momento del intento. `userActivation` es la respuesta directa a la
+    // pregunta del autoplay: dice si esta pagina ha recibido ya un gesto tuyo.
+    function soundEnvironment() {
+        const ua = navigator.userActivation;
+        return {
+            gestoEnEstaCarga: ua ? ua.hasBeenActive : '(el navegador no lo expone)',
+            gestoAhoraMismo: ua ? ua.isActive : '(el navegador no lo expone)',
+            pestanaVisible: document.visibilityState,
+            conFoco: document.hasFocus(),
+        };
     }
 
-    // Tres tonos, algo mas largo y separado que el de premio, para que no se
-    // confundan de oido. Es un "ven a mirar", no un "ganaste".
-    function playWheelFallbackBeep() {
-        playBeep([[784, 0], [1047, 0.18], [1319, 0.36]], 0.07, 0.45);
+    // -------- Desbloqueo del audio con el primer gesto del usuario --------
+    //
+    // Los navegadores no dejan sonar a una pagina con la que aun no has
+    // interactuado: el contexto de Web Audio nace `suspended` y solo un gesto
+    // tuyo lo despierta. Asi que tu primer clic (o tecla) lo arranca, en
+    // silencio y sin que se note, y a partir de ahi el aviso puede sonar cuando
+    // haga falta, sin gesto y con la pestana en segundo plano.
+    //
+    // Esto es lo que hace que el aviso suene de verdad, junto con el vigilante
+    // que ya no recarga: con la pagina viva, el clic que diste al llegar sigue
+    // valiendo media hora despues. Lo unico que sigue sin poder sonar es el
+    // aviso de la primera carga —ahi no ha habido gesto todavia—, y ese es
+    // justo el que tienes delante.
+    let audioPrimed = false;
+
+    function primeAudioOnGesture() {
+        if (audioPrimed) return;
+        audioPrimed = true;   // un solo intento: si falla, no se reintenta en cada clic
+        try {
+            const c = getAudioCtx();
+            if (!c) return;
+            if (c.state !== 'suspended') { console.log(SND, 'contexto ya en marcha:', c.state); return; }
+            c.resume().then(
+                () => console.log(SND, 'desbloqueado con tu primer gesto: ya puede sonar sin pedir permiso'),
+                (e) => console.warn(SND, 'no se pudo desbloquear en el gesto:', e && e.name)
+            );
+        } catch (_) {}
     }
+
+    function bindAudioUnlock() {
+        if (bindAudioUnlock._done) return;
+        bindAudioUnlock._done = true;
+        ['pointerdown', 'keydown', 'touchstart'].forEach((ev) => {
+            document.addEventListener(ev, primeAudioOnGesture, { capture: true, once: true, passive: true });
+        });
+    }
+
+    // Aviso de ruleta: DOS toques ascendentes iguales, separados. Dos y no uno
+    // para que no se confunda con el del premio, que es un arpegio corto de dos
+    // notas: uno dice «ganaste», el otro «ven a mirar». Van en la misma llamada
+    // —seis pasos, no dos beeps encadenados— porque el segundo tendria que
+    // llegar por temporizador, y el alert() que sale justo despues congela el
+    // hilo: no sonaria hasta que cerraras el dialogo.
+    function playWheelAlert() {
+        const acorde = [[784, 0], [1047, 0.16], [1319, 0.32]];
+        const segundo = acorde.map(([hz, at]) => [hz, at + 0.62]);
+        playBeep(acorde.concat(segundo), 0.09, 0.4);
+    }
+
+    // Prueba a mano desde la consola: `igBulkSound()`.
+    //
+    // Ojo con lo que mide: llamarla desde la consola de DevTools CUENTA COMO
+    // GESTO del usuario en Chrome, asi que si suena aqui y no en el aviso, eso
+    // no exculpa al fichero — señala al autoplay—. Y al reves: si NO suena ni
+    // aqui, el autoplay queda descartado y el problema es el fichero, el
+    // volumen del sistema o la pestana silenciada.
+    try {
+        const w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
+        w.igBulkSound = () => {
+            console.log(SND, '--- aviso de ruleta a mano ---', soundEnvironment());
+            playWheelAlert();
+            return 'si el contexto sale «running» arriba, sono';
+        };
+        w.igBulkWin = () => { console.log(SND, '--- beep de premio a mano ---'); playWinBeep(); };
+    } catch (_) { /* sandbox sin unsafeWindow */ }
 
     // -------- Marcas al principio del <title> de la pestana --------
     //
@@ -2853,6 +2987,15 @@
     // por la página que hay detrás del overlay, que no se ve pero sigue ahí.
     function aboutSetInert(overlay, on) {
         if (on) {
+            // El foco esta en el ℹ️, que vive DENTRO del widget que estamos a
+            // punto de marcar aria-hidden, y eso el navegador lo rechaza:
+            // «Blocked aria-hidden on an element because its descendant retained
+            // focus». Se suelta antes; el modal se lo lleva enseguida con su
+            // propio focus() al boton de cerrar.
+            try {
+                const foco = document.activeElement;
+                if (foco && foco !== document.body && typeof foco.blur === 'function') foco.blur();
+            } catch (_) { /* noop */ }
             const saved = [];
             Array.from(document.body.children).forEach((el) => {
                 if (el === overlay) return;
@@ -3310,6 +3453,7 @@
                     <div class="ig-bw-amount" id="ig-bw-amount">${T.widgetBalanceUnknown}</div>
                     <div class="ig-bw-avail" id="ig-bw-avail" style="display:none"></div>
                     <div class="ig-bw-credit" id="ig-bw-credit" style="display:none"></div>
+                    <div class="ig-bw-wheel" id="ig-bw-wheel"></div>
                     <label class="ig-bw-toggle" title="${escapeHtml(T.widgetRememberFiltersTooltip)}">
                         <input type="checkbox" id="ig-bw-remember-filters">
                         <span>${T.widgetRememberFilters}</span>
@@ -3484,9 +3628,43 @@
                 creditEl.style.display = 'none';
             }
         }
+        refreshWheelLine();
+
         // Aqui y no en loadIgnoredGids(): la poda corre en la primera lectura del
         // registro, que puede ser antes de que exista <body>.
         announceIgnoredPrune();
+    }
+
+    // Repinta la cuenta atras. Mientras el vigilante no haya comprobado la
+    // ruleta (`wheelChecked`), la linea cuenta pero NO afirma que no la haya:
+    // decir «proxima en 3h» con una ruleta esperando seria justo lo contrario de
+    // lo que hay. Por eso el estado «disponible» manda sobre el contador.
+    function refreshWheelLine() {
+        const w = document.getElementById(BALANCE_WIDGET_ID);
+        const el = w && w.querySelector('#ig-bw-wheel');
+        if (!el) return;
+        const now = new Date();
+        const local = wheelResetLocalTime(now);
+        if (wheelAvailable) {
+            el.className = 'ig-bw-wheel ig-bw-wheel-now';
+            el.textContent = T.wheelReady;
+        } else {
+            el.className = 'ig-bw-wheel';
+            el.textContent = fmt(T.wheelCountdown, {
+                v: fmtWheelCountdown(msToWheelReset(now)), h: local
+            });
+        }
+        el.title = fmt(T.wheelCountdownTip, { h: local });
+    }
+
+    // Cada 30 s, como los relojes del panel de Alienware: calcular la cuenta
+    // atras una sola vez al cargar es el fallo que ya se pago en Bing Rewards
+    // —el panel decidia con el dato de ayer— y una linea que se queda quieta
+    // miente en cuanto pasan cinco minutos.
+    function startWheelLineClock() {
+        if (startWheelLineClock._started) return;
+        startWheelLineClock._started = true;
+        setInterval(refreshWheelLine, 30000);
     }
 
     // =============================================
@@ -3809,7 +3987,7 @@
 
     // -------- Estado persistente del vigilante de la ruleta --------
     function loadWheelState() {
-        const def = { baselineSig: null, relearn: false, lastPrize: null };
+        const def = { baselineSig: null, relearn: false, lastPrize: null, lastEmptyAt: null, announced: false };
         try {
             let raw = null;
             if (typeof GM_getValue !== 'undefined') {
@@ -3864,6 +4042,10 @@
         if (st.relearn) {
             st.relearn = false;
             st.baselineSig = (sig === WHEEL_BASELINE_SIG) ? null : sig;
+            // Acabas de girar: la proxima aparicion es una observacion nueva, y
+            // esta recarga es una prueba fechada de que ahora no hay ruleta.
+            st.lastEmptyAt = Date.now();
+            st.announced = false;
             saveWheelState(st);
             console.log('[IG-BulkTools] wheel: firma base aprendida tras giro:', st.baselineSig || '(hardcodeada)');
             wheelChecked = true;
@@ -3878,21 +4060,65 @@
         // traido se lo lleva la recarga. Regla del usuario, no una suposicion.
         wheelAvailable = changed;
         wheelChecked = true;
+        noteWheelWindow(changed, st);
+        try { refreshWheelLine(); } catch (_) {}
         if (changed) notifyWheelAvailable();
     }
 
-    // Aviso de "hay ruleta": toast que se queda hasta que lo cierres, beep y
-    // marca 🎡 al principio del titulo de la pestana.
+    // Deja por escrito la ventana en la que cayo el reinicio: entre la ULTIMA
+    // vez que se miro y no habia ruleta y la PRIMERA que si la habia. Dos marcas
+    // de tiempo, y es lo unico que puede desmentir el WHEEL_RESET_UTC_HOUR
+    // supuesto sin ponerse a vigilar a mano. Va a la consola y no al panel: es
+    // material para decidir, no un dato que el usuario tenga que leer.
+    function noteWheelWindow(disponible, st) {
+        const ahora = Date.now();
+        if (!disponible) {
+            st.lastEmptyAt = ahora;
+            st.announced = false;
+            saveWheelState(st);
+            return;
+        }
+        if (st.announced) return;               // esta aparicion ya se conto
+        st.announced = true;
+        saveWheelState(st);
+        console.log('[IG-BulkTools] wheel: apareció entre',
+            st.lastEmptyAt ? new Date(st.lastEmptyAt).toISOString() : '(sin medida previa)',
+            'y', new Date(ahora).toISOString(),
+            '| reinicio supuesto:', WHEEL_RESET_UTC_HOUR + ':00 UTC');
+    }
+
+    // Aviso de "hay ruleta": marca 🎡 en el titulo de la pestana, toast, y un
+    // alert() que hay que cerrar.
     //
-    // Aqui habia un alert(). Se fue por dos motivos: congelaba la pagina —y con
-    // ella la cola y las recargas del propio vigilante— hasta que alguien lo
-    // cerrara, y no se ve ni suena con la pestana en segundo plano, que es
-    // precisamente cuando el vigilante trabaja. La marca en el titulo si se ve
-    // desde otra pestana, sin foco y sin permisos que pedir.
-    function notifyWheelAvailable() {
-        try { showToast(T.wheelAvailableAlert, 'warn', 0); } catch (_) {}
+    // El sonido es un beep sintetizado, no un fichero. Se probo con un MP3
+    // embebido y la consola lo tumbo: `NotAllowedError — play() failed because
+    // the user didn't interact with the document first`. Cambiar de <audio> a
+    // Web Audio NO arregla eso —los dos estan bajo la misma politica—; lo que lo
+    // arregla es que el vigilante ya no recargue, porque el aviso llega ahora
+    // sobre una pagina viva en la que ya hiciste clic. Por eso el beep del
+    // premio siempre sono: llega justo despues de que pulses Spin.
+    //
+    // Queda un caso mudo, y es el bueno: si al ABRIR /giveaways ya hay ruleta,
+    // ahi no ha habido ningun gesto todavia y el navegador no deja sonar nada.
+    // Da igual — ese aviso lo tienes delante.
+    //
+    // El alert() esta aqui porque es lo unico que se planta delante cuando
+    // regresas a la pestana. Sus dos pegas siguen siendo ciertas —congela la
+    // pagina hasta que lo cierres, y con la pestana en segundo plano el dialogo
+    // no se ve— y es justo lo que cubren el sonido y la marca del titulo.
+    //
+    // El orden no es cosmetico: alert() congela el hilo, asi que la marca y el
+    // toast tienen que estar pintados ANTES, con un respiro para que el
+    // navegador los dibuje. Lanzandolo primero, lo unico que se ve mientras el
+    // dialogo esta arriba es la pagina tal como estaba.
+    async function notifyWheelAvailable() {
+        console.log('[IG-BulkTools] wheel: lanzando aviso (marca + toast + beep + alert)');
         try { addTitleMark(WHEEL_TITLE_MARK); } catch (_) {}
+        try { showToast(T.wheelAvailableAlert, 'warn', 0); } catch (_) {}
         try { playWheelAlert(); } catch (_) {}
+        await sleep(50);
+        try { (typeof unsafeWindow !== 'undefined' && unsafeWindow.alert ? unsafeWindow.alert : window.alert)(T.wheelAvailableAlert); }
+        catch (_) { try { window.alert(T.wheelAvailableAlert); } catch (__) {} }
     }
 
     // Tras la recarga post-giro, vuelve a mostrar el premio en un toast. El
@@ -4017,7 +4243,13 @@
             // Ya giraste: la marca del titulo pierde su sentido antes incluso de
             // la recarga, y dejarla puesta seria avisar de algo ya atendido.
             try { removeTitleMark(WHEEL_TITLE_MARK); } catch (_) {}
+            // Y la linea del widget deja de decir «disponible»: ya no lo esta.
+            wheelAvailable = false;
+            try { refreshWheelLine(); } catch (_) {}
             try { showToast(fmt(T.wheelSpinWon, { prize }), 'success'); } catch (_) {}
+            // Este beep SI suena, y por eso se queda: llega justo despues de que
+            // pulses Spin, o sea con un gesto tuyo en este mismo documento. Es la
+            // unica parte del script donde el navegador deja sonar algo.
             try { playWinBeep(); } catch (_) {}
 
             // Marcar ANTES de recargar. relearn -> la firma base se reaprende en
@@ -4074,6 +4306,48 @@
     // throttling de pestañas en background). No recarga mientras haya cola en
     // curso (running) ni mientras el usuario tenga un modal/overlay abierto:
     // en ese caso reintenta cada 30 s hasta que se libere.
+    // Endpoint del que el PROPIO sitio saca el estado de la ruleta: el <script>
+    // inline de cada pagina llama a /ajax/user/get-data y con su
+    // `fortune_wheel_status` decide si pinta «Wheel of Fortune ready!» en el
+    // menu. Preguntarlo desde aqui no es adivinar nada —es leer la misma fuente,
+    // con la misma sesion y el mismo CSRF— y ademas no cuesta una recarga.
+    const WHEEL_STATUS_URL = '/ajax/user/get-data';
+
+    function readCsrfCookie() {
+        const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+        return m ? decodeURIComponent(m[1]) : '';
+    }
+
+    // Devuelve el estado ('available' u otro) o lanza. Que lance importa: quien
+    // llama tiene que poder distinguir «no hay ruleta» de «no pude preguntar»,
+    // porque lo segundo se resuelve recargando, como se hacia antes.
+    async function fetchWheelStatus() {
+        const csrf = readCsrfCookie();
+        const res = await fetch(WHEEL_STATUS_URL, {
+            method: 'POST',
+            credentials: 'same-origin',
+            cache: 'no-cache',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf, 'X-CSRFToken': csrf },
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (!data || typeof data.fortune_wheel_status === 'undefined') throw new Error('la respuesta no trae fortune_wheel_status');
+        return String(data.fortune_wheel_status);
+    }
+
+    // Prueba a mano desde la consola: `igBulkWheelStatus()`. Devuelve lo que el
+    // servidor dice AHORA sobre la ruleta, sin recargar. Existe para poder
+    // comprobar de un vistazo que el vigilante sin recarga se entera de verdad,
+    // en vez de tener que fiarse de que se entere.
+    try {
+        const w = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
+        w.igBulkWheelStatus = () => fetchWheelStatus().then(
+            (st) => { console.log('[IG-BulkTools] wheel: el servidor dice', JSON.stringify(st),
+                st === 'available' ? '→ HAY ruleta' : '→ no hay ruleta'); return st; },
+            (e) => { console.warn('[IG-BulkTools] wheel: no se pudo preguntar:', e && e.message); throw e; }
+        );
+    } catch (_) { /* sandbox sin unsafeWindow */ }
+
     async function startWheelWatcher() {
         if (!isListingRoot()) return;
         if (startWheelWatcher._started) return;
@@ -4088,11 +4362,48 @@
         try { maybeLoadAllPages(); } catch (e) { console.error('[IG-BulkTools] maybeLoadAllPages:', e); }
         try { renderBalanceWidget(); } catch (e) { /* sin widget que repintar */ }
 
-        await sleep(CFG.wheelCheckIntervalMs);
-        while (running || isUserBusy()) {
-            await sleep(30000);
+        // Bucle de vigilancia SIN recargar. Antes esto recargaba /giveaways cada
+        // 15 min pasara lo que pasara, y esa era la razon de fondo por la que el
+        // aviso nunca sonaba: cada recarga estrena un documento sin ningun gesto
+        // tuyo dentro, y el navegador no deja sonar a una pagina asi (visto en
+        // consola: «NotAllowedError — play() failed because the user didn't
+        // interact with the document first»). Manteniendo la pagina viva, el
+        // clic que diste al llegar sigue valiendo media hora despues.
+        //
+        // La recarga no desaparece del todo: cuando SI hay ruleta hace falta,
+        // porque el popup para girarla lo monta el sitio al cargar. Pero ahora va
+        // detras del aviso —primero suena, luego recarga— y solo ese dia.
+        while (true) {
+            await sleep(CFG.wheelCheckIntervalMs);
+            while (running || isUserBusy()) await sleep(30000);
+
+            let status = null;
+            try {
+                status = await fetchWheelStatus();
+            } catch (e) {
+                // No se pudo preguntar (sesion caida, endpoint cambiado, red).
+                // Se cae al comportamiento de siempre: recargar y que
+                // checkWheelOnce lo mire en el DOM.
+                console.warn('[IG-BulkTools] wheel: no pude consultar el estado, recargo como antes:', e && e.message);
+                try { location.reload(); } catch (_) {}
+                return;
+            }
+            console.log('[IG-BulkTools] wheel: estado segun el servidor:', status);
+
+            const hay = status === 'available';
+            if (hay === wheelAvailable) continue;      // sin novedad
+            wheelAvailable = hay;
+            try { refreshWheelLine(); } catch (_) {}
+            if (!hay) continue;
+
+            // Se espera a que cierres el alert(): recargar con el dialogo
+            // delante lo dejaria a medias, y ademas la recarga es lo que trae el
+            // popup para girar, asi que llega justo cuando vas a usarlo.
+            await notifyWheelAvailable();
+            while (running || isUserBusy()) await sleep(30000);
+            try { location.reload(); } catch (_) {}
+            return;
         }
-        try { location.reload(); } catch (_) {}
     }
 
     // =============================================
@@ -5604,6 +5915,10 @@
         // aqui arriba, en los dos caminos, porque es delegado: se engancha una vez y
         // sirve a las tres zonas, existan ya o no.
         try { initOwnTooltips(); } catch (e) {}
+        // El primer clic o tecla tuyo desbloquea el sonido para el resto de la
+        // sesion de esta pagina. Va aqui arriba para no depender de que llegue
+        // antes o despues el widget.
+        try { bindAudioUnlock(); } catch (e) {}
         if (isStoreProduct()) {
             initStoreLinks();
             return;
@@ -5630,6 +5945,7 @@
         startWheelWatcher();
         // Detector de giro: recarga tras revelarse el premio (idem, listado raiz).
         watchWheelSpin();
+        startWheelLineClock();
         // Si venimos de esa recarga, reanunciar el premio junto al saldo nuevo.
         announceLastWheelPrize();
     }

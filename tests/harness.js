@@ -178,7 +178,12 @@ async function run({
     // de dejarlo estallar (jsdom no lo implementa) para poder AFIRMAR que no se
     // llama: un aviso bloqueante se ve aqui igual de bien que en el navegador.
     const alertas = [];
-    w.alert = (msg) => { alertas.push(String(msg)); };
+    // El título EN EL INSTANTE de cada alert(). Un alert() congela el hilo, así
+    // que lo que no estuviera pintado antes no se ve hasta cerrarlo: sin esta
+    // foto no hay forma de distinguir «la marca se puso antes» de «se puso
+    // después», y las dos dejan el mismo título al final.
+    const tituloAlAlertar = [];
+    w.alert = (msg) => { alertas.push(String(msg)); tituloAlAlertar.push(w.document.title); };
     // El revelador de imagenes del sitio, solo cuando el test lo pide: asi el
     // caso normal ejerce el RESPALDO del script (que es el que tiene que
     // funcionar si el sitio le cambia el nombre) y este caso comprueba que,
@@ -272,6 +277,16 @@ async function run({
             const tot = cs.find(c => !c.querySelector('a, .current'));
             return !!(tot && !tot.classList.contains('ig-pag-folded') && /\d+\s*items/.test(tot.textContent || ''));
         })(),
+        // Cuenta atras de la ruleta: su texto y si esta en el estado de aviso.
+        // Se lee del widget, que es donde la ve el usuario.
+        lineaRuleta: (() => {
+            const e = w.document.querySelector('#ig-bw-wheel');
+            return e ? (e.textContent || '').trim() : null;
+        })(),
+        lineaRuletaAvisando: (() => {
+            const e = w.document.querySelector('#ig-bw-wheel');
+            return !!(e && e.classList.contains('ig-bw-wheel-now'));
+        })(),
         // Aviso de ruleta: la marca en el titulo (lo unico que se ve desde otra
         // pestaña), los toasts que quedan en pie y las llamadas a alert().
         titulo: w.document.title,
@@ -281,6 +296,7 @@ async function run({
         // 4,5 s ya no esta.
         toastsPegajosos: Array.from(w.document.querySelectorAll('.ig-toast')).filter(t => t.title).length,
         alertas,
+        tituloAlAlertar: tituloAlAlertar[0] || null,
         estado: statusEl ? (statusEl.textContent || '').trim() : null,
         estadoVisible: statusEl ? statusEl.style.display !== 'none' : false,
         casilla: (() => { const c = w.document.querySelector('#ig-bw-load-all'); return c ? !!c.checked : null; })(),
