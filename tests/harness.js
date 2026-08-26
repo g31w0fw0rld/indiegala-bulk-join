@@ -132,7 +132,7 @@ async function run({
     current = 1, last = 3, level = 'all', pages = {}, carousel = [],
     loadAllPages = true, rememberFilters = false, savedPage = 1,
     wheel = 'baseline', search = false, busy = false, serve = {},
-    withAsyncImgLoader = false, waitMs = 5000, retitulo = null
+    withAsyncImgLoader = false, waitMs = 5000, retitulo = null, hover = null
 } = {}) {
     const total = Object.values(pages).reduce((n, p) => n + p.length, 0);
     const cells = (pages[current] || []).map(cell);
@@ -231,6 +231,34 @@ async function run({
 
     await new Promise(r => setTimeout(r, waitMs));
 
+    // Tooltip propio: se apunta a un control, se comprueba que la caja sale y que
+    // el `title` se guardó, y DESPUÉS se fuerza un repintado del widget para ver
+    // si alguien se lo devuelve. Ese es el fallo: con el title de vuelta salen
+    // los dos avisos a la vez, el nuestro y el del navegador.
+    let tooltip = null;
+    if (hover) {
+        const target = w.document.querySelector(hover);
+        if (target) {
+            target.dispatchEvent(new w.MouseEvent('mouseover', { bubbles: true }));
+            await new Promise(r => setTimeout(r, 600));      // > TIP_DELAY_MS (250)
+            const cajaAntes = !!w.document.querySelector('#ig-tip.ig-tip-visible');
+            const titleAntes = target.getAttribute('title');
+            // Cualquier mutación despierta al observador, que vuelve a pasar por
+            // renderBalanceWidget. Es la forma de reproducir el repintado sin
+            // esperar a que el sitio mueva algo por su cuenta.
+            w.document.body.appendChild(w.document.createElement('span'));
+            await new Promise(r => setTimeout(r, 900));      // > debounce de 250 ms
+            tooltip = {
+                cajaVisible: cajaAntes && !!w.document.querySelector('#ig-tip.ig-tip-visible'),
+                titleAntes,
+                titleDespues: target.getAttribute('title'),
+                textoCaja: ((w.document.querySelector('#ig-tip') || {}).textContent || '').slice(0, 60),
+            };
+        } else {
+            tooltip = { error: 'no existe ' + hover };
+        }
+    }
+
     const scope = w.document.querySelector('#ajax-contents-container .page-contents-list');
     const row = scope ? scope.querySelector('.items-list-row') : null;
     const gids = row ? Array.from(row.children).map(c => {
@@ -296,6 +324,7 @@ async function run({
         // 4,5 s ya no esta.
         toastsPegajosos: Array.from(w.document.querySelectorAll('.ig-toast')).filter(t => t.title).length,
         alertas,
+        tooltip,
         tituloAlAlertar: tituloAlAlertar[0] || null,
         estado: statusEl ? (statusEl.textContent || '').trim() : null,
         estadoVisible: statusEl ? statusEl.style.display !== 'none' : false,

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Bulk Tools (giveaway ticket queue + store links)
 // @namespace    http://tampermonkey.net/
-// @version      1.10.3
+// @version      1.10.4
 // @description  Unified ticket queue for Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another; add, remove and reorder mid-run, and tickets you cannot afford wait instead of killing the run. GalaSilver widget, prize checking, wheel alerts, remembered filters, every listing page in one. On store product pages it adds GG.deals and PCGamingWiki title-search buttons. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -50,7 +50,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.10.3';
+    const SCRIPT_VERSION = '1.10.4';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     // La advertencia de automatizacion solo aplica al modulo de giveaways. En la
     // tienda este script no automatiza nada —pone dos enlaces— y avisar ahi de un
@@ -2944,7 +2944,11 @@
         const btn = w.querySelector('#ig-bw-min');
         if (btn) {
             btn.textContent = min ? '▢' : '–';
-            btn.title = min ? T.widgetRestore : T.widgetMinimize;
+            // Mismo motivo que en refreshWheelLine: el widget se repinta entero en
+            // cada pasada del observador y este boton no se recrea, asi que un
+            // `btn.title =` a pelo devolveria el aviso del sistema encima del
+            // nuestro con el raton puesto.
+            setTipText(btn, min ? T.widgetRestore : T.widgetMinimize);
         }
     }
 
@@ -3654,7 +3658,11 @@
                 v: fmtWheelCountdown(msToWheelReset(now)), h: local
             });
         }
-        el.title = fmt(T.wheelCountdownTip, { h: local });
+        // setTipText y no `el.title =`: esta linea se repinta cada 30 s y en cada
+        // pasada del observador, y este nodo SOBREVIVE al repintado. Escribir el
+        // title a pelo se lo devuelve al elemento mientras nuestra caja esta
+        // arriba, y salen los dos avisos a la vez —el nuestro y el del sistema—.
+        setTipText(el, fmt(T.wheelCountdownTip, { h: local }));
     }
 
     // Cada 30 s, como los relojes del panel de Alienware: calcular la cuenta
