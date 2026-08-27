@@ -184,6 +184,13 @@ async function run({
     // después», y las dos dejan el mismo título al final.
     const tituloAlAlertar = [];
     w.alert = (msg) => { alertas.push(String(msg)); tituloAlAlertar.push(w.document.title); };
+    // GM_notification se captura para poder afirmar que NO se llama, igual que
+    // con alert(). Se probó en 1.10.5 —es el único canal que se salta el
+    // autoplay, porque lo lanza el gestor y no la página— y se descartó: no se
+    // quiere un aviso del sistema, y su `highlight` además cambia de pestaña.
+    // Sin esta captura, volver a añadirla no rompería ninguna prueba.
+    const notificaciones = [];
+    w.GM_notification = (o) => { notificaciones.push(o); };
     // El revelador de imagenes del sitio, solo cuando el test lo pide: asi el
     // caso normal ejerce el RESPALDO del script (que es el que tiene que
     // funcionar si el sitio le cambia el nombre) y este caso comprueba que,
@@ -324,6 +331,9 @@ async function run({
         // 4,5 s ya no esta.
         toastsPegajosos: Array.from(w.document.querySelectorAll('.ig-toast')).filter(t => t.title).length,
         alertas,
+        notificaciones: notificaciones.map(n => ({
+            title: n && n.title, text: n && n.text, silent: n && n.silent
+        })),
         tooltip,
         tituloAlAlertar: tituloAlAlertar[0] || null,
         estado: statusEl ? (statusEl.textContent || '').trim() : null,
