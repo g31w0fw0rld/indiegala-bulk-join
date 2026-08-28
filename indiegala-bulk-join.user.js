@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Bulk Tools (giveaway ticket queue + store links)
 // @namespace    http://tampermonkey.net/
-// @version      1.10.5
+// @version      1.10.6
 // @description  Unified ticket queue for Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another; add, remove and reorder mid-run, and tickets you cannot afford wait instead of killing the run. GalaSilver widget, prize checking, wheel alerts, remembered filters, every listing page in one. On store product pages it adds GG.deals and PCGamingWiki title-search buttons. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban.
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -50,7 +50,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.10.5';
+    const SCRIPT_VERSION = '1.10.6';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     // La advertencia de automatizacion solo aplica al modulo de giveaways. En la
     // tienda este script no automatiza nada —pone dos enlaces— y avisar ahi de un
@@ -389,7 +389,7 @@
                 '• "Revisar premios" abre tu biblioteca en otra pestaña y la recorre: Giveaways → Completed to check → Check all → Completed won.',
                 '• Anuncia los premios terminados hoy en un widget dentro de la página, con enlaces y contador en el título de la pestaña. Una sola vez por premio.',
                 '▸ Wheel of Fortune',
-                '• Pregunta cada 15 min si la ruleta cambió de estado, al mismo sitio del que Indiegala lo saca para pintar su menú, y sin recargar la página. Solo recarga el día que sí hay ruleta —el popup para girarla lo monta el sitio al cargar—, y lo hace después de avisarte.',
+                '• Recarga la página cada 15 min, que es lo que mantiene al día tres cosas que Indiegala no refresca solas: tu saldo de GalaSilver y GalaCredit (se leen del menú que el servidor pinta al cargar), los sorteos nuevos del listado, y el estado de la ruleta. Nunca recarga con la cola corriendo ni con un diálogo abierto: espera a que termines.',
                 '• El aviso son tres cosas a la vez: una marca 🎡 al principio del título de la pestaña —lo único que se lee desde otra pestaña—, un toast que se queda hasta que lo cierres, y un diálogo que hay que cerrar. La marca se va al girar.',
                 '• El diálogo interrumpe a propósito: es lo único que no se te puede pasar. Se probó sustituirlo por un sonido y no funciona — los navegadores no dejan sonar a una página con la que no has interactuado en esa carga, que es justo el caso de la pestaña que dejaste abierta y olvidada. Al cerrarlo, la página se recarga para traer el popup con el que girar.',
                 '• El widget lleva la cuenta atrás de la próxima ruleta, con la hora en tu reloj, y pasa a decir «disponible ahora» cuando la hay. Se repinta sola cada medio minuto. Ojo con la hora: Indiegala no publica en ninguna parte cuándo reinicia la ruleta —no está ni en la página, ni en su JS, ni en los datos de tu cuenta—, así que el script cuenta hacia las 00:00 UTC, que es cuando empieza su día, y apunta en la consola la ventana en la que ve aparecer la ruleta por si algún día no cuadra.',
@@ -432,7 +432,7 @@
                 '• "Check prizes" opens your library in a new tab and walks it: Giveaways → Completed to check → Check all → Completed won.',
                 '• Announces prizes that ended today in a widget inside the page, with links and a tab-title badge. Once per prize.',
                 '▸ Wheel of Fortune',
-                '• Asks every 15 min whether the wheel changed state, from the same place Indiegala itself reads it to draw its menu, and without reloading the page. It only reloads on the day there IS a wheel — the popup to spin it is built by the site on load — and it does so after alerting you.',
+                '• Reloads the page every 15 min, which is what keeps three things current that Indiegala does not refresh on its own: your GalaSilver and GalaCredit balance (read from the menu the server renders on load), new giveaways in the listing, and the wheel state. It never reloads while the queue is running or a dialog is open: it waits until you are done.',
                 '• The notice is three things at once: a 🎡 mark at the start of the tab title —the only part you can read from another tab—, a toast that stays until you dismiss it, and a dialog you have to close. The mark goes away once you spin.',
                 '• The dialog interrupts on purpose: it is the one thing you cannot miss. Replacing it with a sound was tried and does not work — browsers do not let a page play audio until you have interacted with it in that page load, which is exactly the tab you left open and forgot. Closing it reloads the page to bring up the popup you spin with.',
                 '• The widget counts down to the next wheel, with the time on your own clock, and switches to «available now» when there is one. It redraws itself every half minute. About that hour: Indiegala states nowhere when the wheel resets —not on the page, not in its JS, not in your account data— so the script counts towards 00:00 UTC, which is when its day starts, and logs to the console the window in which it sees the wheel show up, in case it ever does not match.',
@@ -4146,17 +4146,18 @@
         scan();
     }
 
-    // Auto-refresca /giveaways cada CFG.wheelCheckIntervalMs (15 min) para
-    // detectar a tiempo cuando la Wheel of Fortune cambia de estado. Solo en el
-    // listado raiz. La espera usa el timer en Web Worker (resistente al
-    // throttling de pestañas en background). No recarga mientras haya cola en
-    // curso (running) ni mientras el usuario tenga un modal/overlay abierto:
-    // en ese caso reintenta cada 30 s hasta que se libere.
+    // Auto-refresca /giveaways cada CFG.wheelCheckIntervalMs (15 min): saldo,
+    // sorteos nuevos y estado de la ruleta, que es lo que la pagina no refresca
+    // sola. Solo en el listado raiz. La espera usa el timer en Web Worker
+    // (resistente al throttling de pestañas en background). No recarga mientras
+    // haya cola en curso (running) ni mientras el usuario tenga un modal/overlay
+    // abierto: en ese caso reintenta cada 30 s hasta que se libere.
+    //
     // Endpoint del que el PROPIO sitio saca el estado de la ruleta: el <script>
     // inline de cada pagina llama a /ajax/user/get-data y con su
     // `fortune_wheel_status` decide si pinta «Wheel of Fortune ready!» en el
-    // menu. Preguntarlo desde aqui no es adivinar nada —es leer la misma fuente,
-    // con la misma sesion y el mismo CSRF— y ademas no cuesta una recarga.
+    // menu. Ya NO se sondea en el bucle —recargando, checkWheelOnce lo mira en
+    // la pagina nueva—, pero se conserva para `igBulkWheelStatus()`.
     const WHEEL_STATUS_URL = '/ajax/user/get-data';
 
     function readCsrfCookie() {
@@ -4208,49 +4209,36 @@
         try { maybeLoadAllPages(); } catch (e) { console.error('[IG-BulkTools] maybeLoadAllPages:', e); }
         try { renderBalanceWidget(); } catch (e) { /* sin widget que repintar */ }
 
-        // Bucle de vigilancia SIN recargar. Antes esto recargaba /giveaways cada
-        // 15 min pasara lo que pasara, y esa era la razon de fondo por la que el
-        // aviso nunca sonaba: cada recarga estrena un documento sin ningun gesto
-        // tuyo dentro, y el navegador no deja sonar a una pagina asi (visto en
-        // consola: «NotAllowedError — play() failed because the user didn't
-        // interact with the document first»). Manteniendo la pagina viva, el
-        // clic que diste al llegar sigue valiendo media hora despues.
+        // RECARGA PERIODICA. Vuelve en 1.10.6 despues de quitarse en 1.10.3, y el
+        // motivo del regreso es que hace TRES trabajos y solo se habia mirado uno:
         //
-        // La recarga no desaparece del todo: cuando SI hay ruleta hace falta,
-        // porque el popup para girarla lo monta el sitio al cargar. Pero ahora va
-        // detras del aviso —primero suena, luego recarga— y solo ese dia.
-        while (true) {
-            await sleep(CFG.wheelCheckIntervalMs);
-            while (running || isUserBusy()) await sleep(30000);
-
-            let status = null;
-            try {
-                status = await fetchWheelStatus();
-            } catch (e) {
-                // No se pudo preguntar (sesion caida, endpoint cambiado, red).
-                // Se cae al comportamiento de siempre: recargar y que
-                // checkWheelOnce lo mire en el DOM.
-                console.warn('[IG-BulkTools] wheel: no pude consultar el estado, recargo como antes:', e && e.message);
-                try { location.reload(); } catch (_) {}
-                return;
-            }
-            console.log('[IG-BulkTools] wheel: estado segun el servidor:', status);
-
-            const hay = status === 'available';
-            if (hay === wheelAvailable) continue;      // sin novedad
-            wheelAvailable = hay;
-            try { refreshWheelLine(); } catch (_) {}
-            if (!hay) continue;
-
-            // El alert() bloquea hasta que lo cierras, asi que la recarga que
-            // viene detras no pasa a tus espaldas: al volver a la pagina, el
-            // popup para girar ya esta montado. Y las guardas de siempre: no se
-            // recarga con la cola corriendo ni con un dialogo propio abierto.
-            notifyWheelAvailable();
-            while (running || isUserBusy()) await sleep(30000);
-            try { location.reload(); } catch (_) {}
-            return;
-        }
+        //   1. Refresca el saldo. GalaSilver y GalaCredit se leen del menu de
+        //      usuario que el servidor pinta al cargar; entre recarga y recarga
+        //      solo se actualizan como efecto de tus propias compras (el hook de
+        //      /giveaways/join). Sin recargar, una pagina abierta toda la tarde
+        //      enseña el saldo de la tarde anterior.
+        //   2. Trae sorteos nuevos. El listado tampoco se refresca solo, asi que
+        //      al volver a la pestaña ves lo mismo que dejaste.
+        //   3. Deja el estado de la ruleta al dia, que era lo unico que se
+        //      conservo al quitarla — y encima el popup para girarla lo monta el
+        //      sitio al cargar, o sea que la recarga hace falta igual.
+        //
+        // Se habia quitado para que la pagina siguiera viva y el aviso pudiera
+        // sonar: cada recarga estrena un documento sin gestos y el navegador no
+        // deja sonar a una pagina asi. Ese trueque ya no existe — en 1.10.5 se
+        // quito el sonido entero—, asi que la recarga no cuesta nada y devuelve
+        // dos cosas que si se notaban.
+        //
+        // El sondeo a /ajax/user/get-data se va del bucle: recargando, el estado
+        // de la ruleta lo vuelve a mirar checkWheelOnce en la pagina nueva.
+        // fetchWheelStatus() se queda para `igBulkWheelStatus()`, que sigue
+        // sirviendo para preguntarlo a mano sin recargar.
+        await sleep(CFG.wheelCheckIntervalMs);
+        // Las guardas de siempre: no se recarga con la cola corriendo ni con un
+        // dialogo propio abierto.
+        while (running || isUserBusy()) await sleep(30000);
+        console.log('[IG-BulkTools] wheel: recarga periodica (saldo + sorteos nuevos + estado de la ruleta)');
+        try { location.reload(); } catch (_) {}
     }
 
     // =============================================
