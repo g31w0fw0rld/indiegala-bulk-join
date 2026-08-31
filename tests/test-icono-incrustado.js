@@ -26,7 +26,7 @@
 //   IG_SCRIPT=/tmp/icono-remoto.user.js node tests/test-icono-incrustado.js   # → FALLOS
 const fs = require('fs');
 const RUTA = process.env.IG_SCRIPT
-    || '/Users/usuario/code/scripts/indiegala-bulk-join/indiegala-bulk-join.user.js';
+    || __dirname + '/../indiegala-bulk-join.user.js';
 const fuente = fs.readFileSync(RUTA, 'utf8');
 
 // Solo la cabecera: si el data: URI apareciera en el cuerpo del script no valdría,

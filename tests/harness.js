@@ -17,7 +17,7 @@ const { JSDOM, VirtualConsole } = require('jsdom');
 // corren los controles negativos: las mismas pruebas contra la version
 // publicada. Una prueba que pasa igual con el codigo viejo no mide lo que dice.
 const SCRIPT_PATH = process.env.IG_SCRIPT
-    || '/Users/usuario/code/scripts/indiegala-bulk-join/indiegala-bulk-join.user.js';
+    || __dirname + '/../indiegala-bulk-join.user.js';
 
 // Firma exacta que el script lleva hardcodeada como "sin novedad". Escrita
 // igual, atributo por atributo: normalizeHtmlSig() colapsa espacios y pasa a
