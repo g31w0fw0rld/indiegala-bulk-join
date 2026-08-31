@@ -1,8 +1,9 @@
 // ==UserScript==
 // @name         Indiegala Bulk Tools (giveaway ticket queue + store links)
 // @namespace    http://tampermonkey.net/
-// @version      1.10.6
+// @version      1.10.7
 // @description  Unified ticket queue for Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another; add, remove and reorder mid-run, and tickets you cannot afford wait instead of killing the run. GalaSilver widget, prize checking, wheel alerts, remembered filters, every listing page in one. On store product pages it adds GG.deals and PCGamingWiki title-search buttons. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban.
+// @icon         data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAIKADAAQAAAABAAAAIAAAAACshmLzAAADNUlEQVRYCcVXMWxTMRB1orS0tIkixAZD2UqndEFs+QjonEosLC3pwlKpEwNITEh06BSpDCxtmoUFKVlYkBA/G+pCWErHDrCBVCWgFAiEe9a3c/Z3WpP2i5Msn893vue7s79/SnjSl5nZAqmWqBWpBdRcFJKwSa1x8WC/5VKwZSlbYI/J8T2SrVEDgH8hAKgQkOpxRkMBkOMZMtymFlA7DYVkXCYgB65FnADIOUIN53mX0QiyQ7IBiIZtGwMQhRzOkyCAqPKFDQDRzutcIQF+kUdCA4hy/p4cnlXYh2FHOuZVTaSZ1lnmnC0bY7FBnWIZgZPynsplRb/dia0EQWZuVqRyOTn3+9Nn8YeaJ8l6yETKOOdOgoPJtVXRub+q5wFocmVZTJSXyHlWy8H09vZFt7Ipfr5+Y8gdA/ispmj3BWKQ+xhh8fyrusDO2neX5TwATW2sy53HDJjgx8u6+PbgEZM42XnUQMk5RULsMn35kp4GoOzzTcM5UvPr3a5sWpGY8YVbhi2fY3wJKSgygcEixJzOUyo4oO9P1sXRVk2rAOA0RWfs+jWK2JJPPRQBINArWAzPL/iJlQEghBdh5oRooFYA0rMYA34M+VoxHrtShEKznas59J7OpYk6BdzeyWfmrmp5j3JuEyKUe1Ez6kPpfL0ysFUy1XtHQBmg73fMO+E459zOxXsDQKUrGrt9U7GyR3H22219GpAiX/JOQW/vo14Td8G5O4u6DnAaOOGoCtIBnXQhIQIhFF3Er1/wvPCmN54apwL2SAWcjy8MInS0XXMtrWQhADTVyO5tY+yUV/jU44fiwoddKr4d2cBz5wDMU2evD98A0HBMSFF3a8dwqM45zzF2jSPKjymM4dzjKm6k6bvcIn20GCmHPBVwjluuW3nm/EJiHpeRh/MWfP/Pz7F8GfEX0VsKQRALQzKCkHZ/A0ujBhSViTlUgwR7+IAvSRpA9EbTE0ohgd74R9AA4IhANKhLEkTs3yDl2mH0PMfDMe+aH0Emwx5t0DB3AoBG9EwHiADjU1BItkbY+VpDASil6MWMB2RByTz7FumN/nNqO4keryWS4wkX2PPROKS+Sc379/wvBfE4KdAnimYAAAAASUVORK5CYII=
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
 // @match        https://www.indiegala.com/library
@@ -50,7 +51,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.10.6';
+    const SCRIPT_VERSION = '1.10.7';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     // La advertencia de automatizacion solo aplica al modulo de giveaways. En la
     // tienda este script no automatiza nada —pone dos enlaces— y avisar ahi de un
@@ -95,8 +96,6 @@
     const i18n = {
         es: {
             // Bulk join (Extra Odds)
-            bulkLabel: '⚠ Bulk JOIN',
-            bulkLabelTooltip: '⚠ Riesgo de ban — la política de Indiegala prohíbe la automatización. Uso bajo tu propio riesgo.',
             bulkBadge: '⚠×{n}',
             bulkBadgeTooltip: '⚠ Riesgo de ban — comprar varios boletos (Extra Odds) automáticamente VIOLA la política de Indiegala y puede banear tu cuenta. Máx {n} con tu saldo.',
             modalEnqueueTitle: 'Encolar boletos (Extra Odds)',
@@ -105,6 +104,7 @@
             modalBalance: 'Saldo GalaSilver',
             modalAvailable: 'Disponible (saldo − cola)',
             modalAlreadyQueued: 'Ya en cola',
+            modalAlreadyPurchased: 'Ya comprados',
             modalAffordableNow: 'Alcanzan con tu saldo',
             modalMax: 'Máximo por giveaway',
             modalCountAdd: 'Cantidad a añadir',
@@ -228,8 +228,6 @@
         },
         en: {
             // Bulk join (Extra Odds)
-            bulkLabel: '⚠ Bulk JOIN',
-            bulkLabelTooltip: '⚠ Ban risk — Indiegala policy forbids automation. Use at your own risk.',
             bulkBadge: '⚠×{n}',
             bulkBadgeTooltip: '⚠ Ban risk — buying multiple tickets (Extra Odds) automatically VIOLATES Indiegala policy and may ban your account. Max {n} with your balance.',
             modalEnqueueTitle: 'Queue tickets (Extra Odds)',
@@ -238,6 +236,7 @@
             modalBalance: 'GalaSilver balance',
             modalAvailable: 'Available (balance − queue)',
             modalAlreadyQueued: 'Already queued',
+            modalAlreadyPurchased: 'Already purchased',
             modalAffordableNow: 'Affordable with your balance',
             modalMax: 'Max per giveaway',
             modalCountAdd: 'Tickets to add',
@@ -378,7 +377,8 @@
                 '• Mezcla "Single Ticket" (1 boleto) y "Extra Odds" (N boletos del mismo giveaway) y los compra uno tras otro.',
                 '• Añadir, quitar y reordenar mientras corre: el orden de la lista es el orden de ejecución, y los ▲▼ surten efecto a mitad de corrida.',
                 '• Puedes encolar aunque no te alcance el saldo: esos boletos se marcan con ⏳, se saltan durante la corrida y se compran cuando tengas GalaSilver.',
-                '• Extra Odds se encola desde dos sitios: el badge ⚠×N de la tarjeta (N = cuántos cubre tu saldo) y el botón Bulk JOIN en la página propia del giveaway. Ambos preguntan cuántos boletos y dan dos salidas: Encolar, o Encolar y ejecutar. Tope de 50 por giveaway.',
+                '• Extra Odds se encola desde el badge ⚠×N de la tarjeta (N = cuántos cubre tu saldo). Pregunta cuántos boletos y da dos salidas: Encolar, o Encolar y ejecutar. Tope de 50 por giveaway.',
+                '• Ese diálogo te dice además cuántos boletos YA tienes comprados de ese giveaway, que es el dato con el que se decide si comprar más. El listado no lo publica —lo suyo es «sold», el total de todo el mundo—, así que se lee de la página del giveaway: una petición, solo al abrir el diálogo. Si no se puede saber, la línea no aparece; no se inventa un cero.',
                 '• Ritmo humanizado: 2.5–5 s entre boletos y pausa de 10–20 s cada 10, con temporizador en Web Worker para que no se estiren con la pestaña en segundo plano.',
                 '• Se detiene solo si el servidor protesta (ritmo, baneo, sin respuesta) y ofrece Continuar cuando la causa es recuperable. La cola sobrevive a las recargas.',
                 '• Al hacer clic en el título de una tarjeta se encola, en vez de abrir el giveaway.',
@@ -402,7 +402,7 @@
                 '▸ Fichas de la tienda',
                 '• En las fichas de producto (juegos, DLC y paquetes) añade dos botones bajo "Añadir al carrito": GG.deals busca el título en su catálogo, sin filtro de tienda ni de DRM, y PCGamingWiki busca compatibilidad y arreglos — sin el sufijo de edición y, en un DLC, por el juego base que la propia ficha declara, que es donde PCGamingWiki lo documenta. Los dos buscan por nombre, así que pueden no acertar; cada uno lo dice en su tooltip.',
                 '• Ahí no corre nada más del script: ni cola, ni automatización, ni advertencias. Solo los dos enlaces.',
-                'Todo se procesa en tu navegador y no se envían datos a terceros. Lo único que sale a la red son las páginas del propio listado, y solo si marcas "Cargar todas las páginas": una petición por página, con pausa, a Indiegala y con tu sesión, exactamente como pulsar en su paginación. Al autor no se le envía nada.'
+                'Todo se procesa en tu navegador y no se envían datos a terceros. Lo único que sale a la red son páginas del propio Indiegala, con tu sesión: las del listado si marcas "Cargar todas las páginas" (una por página, con pausa, exactamente como pulsar en su paginación), y la del giveaway que estés encolando al abrir el diálogo de Extra Odds, para leer los boletos que ya tienes. Al autor no se le envía nada.'
             ]
         },
         en: {
@@ -421,7 +421,8 @@
                 '• Mixes "Single Ticket" (1 ticket) and "Extra Odds" (N tickets of the same giveaway) and buys them one after another.',
                 '• Add, remove and reorder while it runs: the order of the list is the execution order, and ▲▼ take effect mid-run.',
                 '• You can queue beyond your balance: those tickets are flagged with ⏳, skipped during the run and bought once you have GalaSilver.',
-                '• Extra Odds can be queued from two places: the ⚠×N badge on the card (N = how many your balance covers) and the Bulk JOIN button on the giveaway\'s own page. Both ask how many tickets and give two exits: Queue, or Queue & run. Capped at 50 per giveaway.',
+                '• Extra Odds is queued from the ⚠×N badge on the card (N = how many your balance covers). It asks how many tickets and gives two exits: Queue, or Queue & run. Capped at 50 per giveaway.',
+                '• That dialog also tells you how many tickets you ALREADY hold in that giveaway, which is the figure the "buy more?" decision hangs on. The listing does not publish it —its «sold» is everyone\'s total, not yours— so it is read from the giveaway\'s own page: one request, only when the dialog opens. If it cannot be known, the line does not show up; it does not make up a zero.',
                 '• Humanized pacing: 2.5–5 s between tickets and a 10–20 s pause every 10, on a Web Worker timer so they are not stretched when the tab is in the background.',
                 '• Stops on its own if the server pushes back (rate limit, ban, no answer) and offers Continue when the cause is recoverable. The queue survives reloads.',
                 '• Clicking a card title queues it instead of opening the giveaway.',
@@ -445,7 +446,7 @@
                 '▸ Store product pages',
                 '• On product pages (games, DLC and packs) it adds two buttons under "Add to Cart": GG.deals searches the title in its catalogue, with no store or DRM filter, and PCGamingWiki searches for compatibility and fixes — without the edition suffix and, on a DLC, by the base game the page itself declares, which is where PCGamingWiki documents it. Both are name searches, so they can miss; each says so in its tooltip.',
                 '• Nothing else from the script runs there: no queue, no automation, no warnings. Just the two links.',
-                'Everything runs in your browser and no data is sent to third parties. The only thing that goes to the network is the listing\'s own pages, and only if you tick "Load every page": one request per page, spaced out, to Indiegala and with your session, exactly like clicking its pagination. Nothing at all is sent to the author.'
+                'Everything runs in your browser and no data is sent to third parties. The only things that go to the network are Indiegala\'s own pages, with your session: the listing\'s pages if you tick "Load every page" (one per page, spaced out, exactly like clicking its pagination), and the page of the giveaway you are queueing when the Extra Odds dialog opens, to read the tickets you already hold. Nothing at all is sent to the author.'
             ]
         }
     };
@@ -554,9 +555,11 @@
     // cuando ya está todo el listado dentro. Clase aparte y no `style.display`
     // para que el sitio pueda recrear la barra sin heredar nada nuestro.
     const PAG_FOLDED_CLASS = 'ig-pag-folded';
-    const BULK_BTN_CLASS = 'ig-bulk-join-btn';
     const BULK_BADGE_CLASS = 'ig-bulk-join-badge';
     const QBTN_CLASS = 'ig-q-btn';
+    // Marca en la <figure> de una tarjeta cuya portada no cargo. Ver
+    // handleImageFailure y su regla en injectStyles.
+    const NOIMG_CLASS = 'ig-figure-noimg';
     const IGN_BTN_CLASS = 'ig-ign-btn';
     const PANEL_ID = 'ig-q-panel';
     const PROGRESS_OVERLAY_ID = 'ig-bulk-progress-overlay';
@@ -1072,6 +1075,19 @@
         return { gid: m[1], price: fnArg2, fnArg2: fnArg2, token: m[3], fnName };
     }
 
+    // Cabecera del onclick de un trigger de join: que funcion invoca y para que
+    // gid. Se lee aparte de parseJoinOnclick porque hay que saber la funcion
+    // ANTES de poder parsear con ella, y porque el MISMO giveaway se invoca con
+    // un nombre distinto segun la pagina: `joinGiveawayOrAuction` en el listado
+    // y `joinGiveawayCard` en su ficha de detalle.
+    const JOIN_ONCLICK_HEAD_REGEX =
+        /\b(joinGiveawayCard|joinGiveawayOrAuction)\s*\(\s*this\s*,\s*event\s*,\s*'([^']+)'/;
+    function readJoinOnclickHead(el) {
+        const oc = el && el.getAttribute && el.getAttribute('onclick');
+        const m = oc ? oc.match(JOIN_ONCLICK_HEAD_REGEX) : null;
+        return m ? { fnName: m[1], gid: m[2] } : null;
+    }
+
     // Busca el data-price real del card (precio en iS).
     function findDataPrice(scope) {
         if (!scope) return null;
@@ -1090,15 +1106,31 @@
         return null;
     }
 
-    // Re-encuentra el trigger por gid (por si el DOM se actualiza tras cada join)
+    // Re-encuentra el trigger vivo de un gid, en la pagina que sea (el DOM se
+    // actualiza tras cada join, y la cola es una sola para listado y fichas).
+    //
+    // Deliberadamente NO se filtra por el fnName con el que se encolo. El mismo
+    // giveaway se pulsa con `joinGiveawayCard` en su ficha y con
+    // `joinGiveawayOrAuction` en el listado, asi que exigir el nombre guardado
+    // dejaba SIN trigger a todo lo encolado desde una ficha en cuanto se
+    // ejecutaba desde el listado — y sin trigger no se refresca el token, que es
+    // justo lo que lleva la marca de tiempo del render y caduca. De ahi que un
+    // item encolado en la ficha fallara al correr la cola en la lista.
+    //
+    // La version anterior tenia ademas un fallo peor y silencioso: para
+    // 'joinGiveawayCard' devolvia `.card-join a[data-price]` SIN comprobar el
+    // gid, o sea el trigger de la ficha en la que estuvieras. Estando en la
+    // ficha de A y ejecutando un item de B, el refresco de abajo hacia
+    // `gid = live.gid` y el join se iba al giveaway equivocado. Ahora el gid es
+    // condicion de coincidencia, y quien ejecuta lee del propio elemento con que
+    // funcion invocarlo.
+    const JOIN_TRIGGER_SELECTOR = '.card-join a[data-price], a.items-list-item-ticket-click';
     function findTrigger(params) {
-        if (params.fnName === 'joinGiveawayCard') {
-            return document.querySelector('.card-join a[data-price]');
-        }
-        const all = document.querySelectorAll('a.items-list-item-ticket-click');
-        for (const a of all) {
-            const onclick = a.getAttribute('onclick') || '';
-            if (onclick.indexOf("'" + params.gid + "'") !== -1) return a;
+        const gid = String((params && params.gid != null) ? params.gid : '');
+        if (!gid) return null;
+        for (const el of document.querySelectorAll(JOIN_TRIGGER_SELECTOR)) {
+            const head = readJoinOnclickHead(el);
+            if (head && head.gid === gid) return el;
         }
         return null;
     }
@@ -1131,9 +1163,6 @@
     // Cola Single Ticket: solo en /giveaways (no en /giveaways/card/*)
     function isListingRoot() {
         return /^\/giveaways\/?$/.test(location.pathname);
-    }
-    function isCardDetail() {
-        return /^\/giveaways\/card\//.test(location.pathname);
     }
     // Biblioteca del usuario (/library). Aqui NO corre la cola ni la inyeccion
     // de giveaways: solo la secuencia de auto-revision de premios.
@@ -1245,26 +1274,6 @@
         const style = document.createElement('style');
         style.id = 'ig-bulk-styles';
         style.textContent = `
-            .${BULK_BTN_CLASS} {
-                display: block;
-                width: 100%;
-                margin-top: 8px;
-                padding: 10px 14px;
-                font-weight: bold;
-                color: #fff;
-                background: linear-gradient(90deg, #6a1b9a 0%, #ad1457 100%);
-                border: none;
-                border-radius: 6px;
-                cursor: pointer;
-                text-align: center;
-                font-size: 14px;
-                letter-spacing: 0.5px;
-                box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-                transition: filter 0.15s;
-            }
-            .${BULK_BTN_CLASS}:hover { filter: brightness(1.15); }
-            .${BULK_BTN_CLASS}:disabled { opacity: 0.5; cursor: not-allowed; }
-
             .${BULK_BADGE_CLASS} {
                 position: absolute;
                 top: 6px;
@@ -1319,6 +1328,27 @@
                Single Ticket lleva el ＋ a la izquierda, asi que el ✕ va a la
                derecha; Extra Odds lleva el badge a la derecha y el ✕ va a la
                izquierda. Nunca coinciden porque una tarjeta es de un solo tipo. */
+            /* Portada que no cargo (ver handleImageFailure). Indiegala ya pinta
+               su propio placeholder de "no image" como background de la
+               <figure>, asi que aqui no se dibuja nada: lo unico que falta es
+               que el hueco se pueda pulsar. Su CSS deja
+                 .items-list-item figure a   { display: block }
+                 .items-list-item figure img { width: 100%; height: auto }
+               o sea que el alto del ancla lo daba la imagen; con la imagen rota
+               "auto" vale 0, el ancla mide 0 px y el clic no llega a ningun
+               lado. La <figure> SI tiene alto fijo (120 px, y 116 px en el
+               listado por AJAX), asi que el 100% lo resuelve sin tocar su
+               posicionamiento. Solo se declara height: el display:block ya lo
+               pone Indiegala y no hay nada que pisar. */
+            .items-list-item figure.${NOIMG_CLASS} > a { height: 100%; }
+            /* Y el <img> roto se esconde, o Chrome pinta su TEXTO ALTERNATIVO
+               ("<Nombre> product image") encima del placeholder — se vio en
+               pantalla, y es la razon de este !important: revealListingImages()
+               y el asyncImgLoader del sitio escriben style.display EN LINEA, y
+               una regla normal de hoja no le gana a un estilo en linea. Con
+               !important si. Mismo recurso que .ig-entered-hidden. */
+            .items-list-item figure.${NOIMG_CLASS} img { display: none !important; }
+
             .${IGN_BTN_CLASS} {
                 position: absolute;
                 top: 6px;
@@ -2193,6 +2223,7 @@
                     <div class="ig-row"><b>${T.modalBalance}</b><span>${balance} iS</span></div>
                     <div class="ig-row"><b>${T.modalAvailable}</b><span>${available} iS</span></div>
                     ${alreadyPending > 0 ? `<div class="ig-row"><b>${T.modalAlreadyQueued}</b><span>${alreadyPending}</span></div>` : ''}
+                    <div class="ig-row" id="ig-bulk-owned-row" style="display:none"><b>${T.modalAlreadyPurchased}</b><span id="ig-bulk-owned"></span></div>
                     <div class="ig-row"><b>${T.modalAffordableNow}</b><span>${affordableNow}</span></div>
                     <div class="ig-row"><b>${T.modalMax}</b><span>${maxAdd}</span></div>
                     <label style="display:block;margin-top:10px;font-size:12px;color:#555">${T.modalCountAdd}:</label>
@@ -2208,6 +2239,19 @@
                 </div>
             `;
             document.body.appendChild(backdrop);
+
+            // Los boletos que ya tienes comprados llegan por su cuenta: la fila
+            // nace oculta y solo aparece si la ficha contesta. Asi el modal se
+            // abre al instante y una ficha que no responde no lo bloquea ni
+            // deja un «—» sin explicacion. Ver fetchPurchasedTickets.
+            fetchPurchasedTickets(params.cardUrl).then((n) => {
+                if (n == null || !backdrop.isConnected) return;
+                const row = backdrop.querySelector('#ig-bulk-owned-row');
+                const val = backdrop.querySelector('#ig-bulk-owned');
+                if (!row || !val) return;
+                val.textContent = String(n);
+                row.style.display = '';
+            }).catch((e) => console.warn('[IG-BulkTools] boletos ya comprados:', e && e.message));
 
             const input = backdrop.querySelector('#ig-bulk-count');
             const totalSpan = backdrop.querySelector('#ig-bulk-total');
@@ -2470,8 +2514,17 @@
                 let token = it.token;
                 let fnArg2 = (it.fnArg2 != null) ? it.fnArg2 : it.price;
                 let triggerEl = findTrigger({ gid: it.gid, fnName });
+                // Que funcion invocar lo dice el trigger VIVO, no lo que se
+                // guardo al encolar: el mismo giveaway es `joinGiveawayCard` en
+                // su ficha y `joinGiveawayOrAuction` en el listado. Sin esto,
+                // un item encolado en la ficha llamaba a una funcion que en el
+                // listado no existe, caia al fallback y viajaba con el token de
+                // la otra pagina.
+                let liveFnName = fnName;
                 if (triggerEl) {
-                    const live = parseJoinOnclick(triggerEl, fnName);
+                    const head = readJoinOnclickHead(triggerEl);
+                    if (head) liveFnName = head.fnName;
+                    const live = parseJoinOnclick(triggerEl, liveFnName);
                     if (live) { gid = live.gid; token = live.token; fnArg2 = live.fnArg2; }
                     const liveItem = triggerEl.closest('.items-list-item');
                     const dp = findDataPrice(liveItem || document);
@@ -2494,13 +2547,12 @@
                 }
 
                 try {
-                    // Resolver dinamicamente la fn segun el item. Para extra odds
-                    // encolados desde el card detail, fnName='joinGiveawayCard'.
-                    // Si el sitio no tiene esa fn definida en este contexto
-                    // (estamos en /giveaways y no en /giveaways/card/X), caemos a
-                    // joinGiveawayOrAuction como fallback compatible — ambas
-                    // hablan con /giveaways/join.
-                    let fn = unsafeWindow[fnName];
+                    // La fn ya viene resuelta del trigger vivo (liveFnName). El
+                    // fallback a joinGiveawayOrAuction queda para el caso en que
+                    // no haya trigger en esta pagina: ambas hablan con
+                    // /giveaways/join, asi que es compatible, pero entonces el
+                    // token va sin refrescar y el server puede rechazarlo.
+                    let fn = unsafeWindow[liveFnName];
                     if (typeof fn !== 'function') fn = unsafeWindow.joinGiveawayOrAuction;
                     if (typeof fn !== 'function') { stopCode = 'trigger_lost'; break; }
                     const elForCall = triggerEl || makeFakeAnchor();
@@ -3526,8 +3578,56 @@
         setInterval(refreshWheelLine, 30000);
     }
 
+    // -------- Boletos que YA tienes comprados en un giveaway --------
+    // El listado NO publica este dato: comprobado contra el HTML real de una
+    // tarjeta con sesion, donde lo unico que hay es tiempo / sold / precio — y
+    // «sold» es el total de todo el mundo, no el tuyo. El unico sitio donde sale
+    // es la ficha, en `.card-join-info`: sin boletos el servidor escribe ahi
+    // «GIVEAWAY <id> - created <fecha>» y con boletos lo cambia por
+    // «GIVEAWAY <id> - 10 tickets purchased».
+    //
+    // Esa segunda cadena esta copiada del textContent REAL, leido con sesion el
+    // 2026-08-31. Importa decirlo porque la primera version de esto la saque de
+    // una captura de pantalla, donde la cifra sale dentro de un circulo oscuro,
+    // y la transcribi como «(10)»: los parentesis eran CSS, no texto, asi que la
+    // expresion no casaba nunca y la fila no aparecia jamas.
+    //
+    // Por eso hay que pedir la ficha, y por eso se pide UNA sola y solo al abrir
+    // el modal de encolar: es el momento exacto en que el numero decide algo
+    // («¿compro mas?»). Pedirla para cada tarjeta del listado serian 132
+    // peticiones con «cargar todas las paginas» puesto, que es un no.
+    //
+    // Se descarto contar los joins del propio script, que habria salido gratis:
+    // solo contaria lo que compro EL SCRIPT en ESTE navegador, asi que a quien
+    // compro boletos a mano —antes, o por error— le diria una cifra corta. Una
+    // cuenta que se queda corta en silencio, justo en el numero con el que
+    // decides si compras mas, es peor que no dar ninguna.
+    //
+    // Y no se cachea, tambien a proposito: el valor cambia en cuanto compras, y
+    // una cifra cacheada aqui enseñaria el estado de antes justo despues.
+    // Los parentesis van opcionales por si algun dia el sitio los pone de
+    // verdad; hoy no estan. El id del giveaway no puede colarse como cifra: sus
+    // digitos van seguidos de « - », no de «tickets purchased».
+    const PURCHASED_REGEX = /\(?(\d+)\)?\s*tickets?\s+purchased/i;
+    async function fetchPurchasedTickets(cardUrl) {
+        if (!cardUrl) return null;
+        const res = await fetch(cardUrl, { credentials: 'same-origin' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+        const info = doc.querySelector('.card-join-info');
+        // Sin el bloque no se sabe (el sitio cambio el marcado) -> null, y el
+        // modal calla. Con el bloque pero sin la frase, la ficha esta diciendo
+        // «created <fecha>», o sea que no tienes ninguno -> 0. Son dos cosas
+        // distintas y se devuelven distintas.
+        if (!info) return null;
+        // Del textContent y no del marcado: asi da igual si el (N) va dentro de
+        // un <strong> o suelto.
+        const m = PURCHASED_REGEX.exec(info.textContent || '');
+        return m ? parseInt(m[1], 10) : 0;
+    }
+
     // =============================================
-    // ENCOLAR EXTRA ODDS (badge / card detail)
+    // ENCOLAR EXTRA ODDS (badge)
     // =============================================
     // Abre el modal de cantidad, encola N copias del gid, y si la cola no
     // estaba corriendo arranca executeQueue (skipConfirm). Si ya corre, solo
@@ -4242,42 +4342,30 @@
     }
 
     // =============================================
-    // INYECCION: PAGINA DE CARD (/giveaways/card/*)
+    // PAGINA DE CARD (/giveaways/card/*): el script ya no pone nada
     // =============================================
-    function injectCardDetail() {
-        if (!isCardDetail()) return;
-
-        let isExtraOdds = false;
-        document.querySelectorAll('.card-data .card-data-text').forEach(el => {
-            if (/^extra\s*odds$/i.test(el.textContent.trim())) isExtraOdds = true;
-        });
-        if (!isExtraOdds) return;
-
-        const joinAnchor = document.querySelector('.card-join a[data-price]');
-        if (!joinAnchor) return;
-        const cardJoinDiv = joinAnchor.closest('.card-join');
-        if (!cardJoinDiv || cardJoinDiv.parentElement.querySelector('.' + BULK_BTN_CLASS)) return;
-
-        const params = parseJoinOnclick(joinAnchor, 'joinGiveawayCard');
-        if (!params) return;
-        // En el card detail, joinAnchor es el mismo elemento con data-price
-        const dpCard = parseInt(joinAnchor.getAttribute('data-price'), 10);
-        if (!isNaN(dpCard)) params.price = dpCard;
-
-        const title = (document.querySelector('.card-title h1') || {}).textContent || `#${params.gid}`;
-
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = BULK_BTN_CLASS;
-        btn.textContent = `${T.bulkLabel} (${params.price} iS × N)`;
-        btn.title = T.bulkLabelTooltip;
-        btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            enqueueExtraOddsFlow(params, title.trim());
-        });
-        cardJoinDiv.parentElement.appendChild(btn);
-    }
+    // Hasta 1.10.7 la ficha llevaba un boton "Bulk JOIN" que abria el mismo
+    // enqueueExtraOddsFlow que el badge ⚠×N del listado. Se quito el 2026-08-31,
+    // y por tres motivos que conviene dejar escritos para no reponerlo:
+    //
+    //   · Era un DUPLICADO exacto: misma funcion, mismo modal, mismas dos
+    //     salidas. Y el badge del listado sale en cualquier listado, no solo en
+    //     la raiz, asi que quitarlo no deja ningun giveaway sin via de entrada.
+    //   · La alternativa que se estudio —darle a la ficha su propia cola, para
+    //     que lo suyo no cayera en la del listado— crea una cola que no se ve
+    //     desde ningun otro sitio. Y como los boletos sin saldo esperan a
+    //     proposito hasta que entre GalaSilver, lo que quedara ahi no seria un
+    //     apunte inerte: se compraria solo, desde una lista que no estas mirando.
+    //   · El saldo es UNO. availableForEnqueue() descuenta lo comprometido en la
+    //     cola, y de ahi salen el ⚠×N de cada tarjeta y el «Faltan N iS» del
+    //     widget. Con dos colas, o no cuentas la otra y esos numeros mienten, o
+    //     la cuentas y el panel del listado enseña un faltante cuyos culpables no
+    //     estan en la lista. No hay tercera salida.
+    //
+    // Lo que SI se conserva del lado de las fichas es el manejo de
+    // `joinGiveawayCard` en findTrigger/readJoinOnclickHead: las colas ya
+    // guardadas en el navegador traen items encolados asi, y hay que seguir
+    // ejecutandolos bien.
 
     // =============================================
     // INYECCION: PAGINA DE LISTADO (/giveaways*)
@@ -4736,6 +4824,10 @@
 
             const titleA = item.querySelector('.items-list-item-title a');
             const title = titleA ? titleA.textContent.trim() : `#${params.gid}`;
+            // La ficha del giveaway, para poder preguntarle cuantos boletos
+            // tienes ya (ver fetchPurchasedTickets). Se copia del href del
+            // titulo en vez de construirla: ahi va el slug, que no se adivina.
+            params.cardUrl = titleA ? titleA.getAttribute('href') : null;
             const timeEl = item.querySelector('.items-list-item-data-left-bottom');
             const timeLeft = timeEl ? timeEl.textContent.trim() : '';
 
@@ -5254,6 +5346,83 @@
         });
     }
 
+    // -------- Portadas que no cargan --------
+    // Indiegala pide la cabecera de Steam y muchas veces no existe, asi que la
+    // tarjeta se queda con el placeholder gris de "no image" que el sitio pinta
+    // como background de la <figure>. Eso por si solo no seria un problema: lo
+    // que se reporto es que ese hueco NO responde al clic, y por tanto no hay
+    // forma de llegar al giveaway desde la tarjeta. Aqui solo se arregla eso.
+    //
+    // NO se intenta recuperar la imagen, y es una decision tomada el 2026-08-31
+    // con las cuentas delante — no un hueco por rellenar:
+    //
+    //   · Indiegala la pide con un sufijo propio, .../apps/<appid>_ig/header.jpg,
+    //     que en el CDN de Steam no existe (404 en los siete appids probados:
+    //     220, 400, 570, 730, 763970, 892970, 1091500). Quitar el sufijo si
+    //     recuperaba una parte, y llego a estar implementado, pero se quito para
+    //     no cargar el script con mantenimiento de una ruta ajena.
+    //   · Y para los juegos publicados recientemente no hay NADA que adivinar:
+    //     por encima de appid ~3,9 M, Steam sirve la cabecera solo bajo un hash
+    //     de contenido (.../store_item_assets/steam/apps/<appid>/<hash>/header.jpg)
+    //     que unicamente conoce su API. Comprobado con los cinco que seguian sin
+    //     portada (3992070, 4224900, 4335910, 4861050, 4992270): 404 en todas las
+    //     rutas sin hash, en los tres hosts del CDN, y tambien en capsule_616x353,
+    //     library_600x900 y page_bg_generated.
+    //   · Las salidas de terceros estan cerradas o cuestan permisos nuevos:
+    //     `store.steampowered.com/api/appdetails` responde pero no manda CORS
+    //     (haria falta GM_xmlhttpRequest + @connect, una llamada por tarjeta y
+    //     una cache), y SteamDB da 403 de Cloudflare en la pagina y en su API,
+    //     ademas de no alojar las imagenes. Indiegala tampoco tiene otra copia:
+    //     en la ficha del giveaway usa la misma URL muerta, y su og:image igual.
+    //
+    // O sea que NO volver a proponer "buscar la portada": lo que se puede hacer
+    // sin permisos nuevos ya se midio y se descarto a proposito.
+    function handleImageFailure(img) {
+        const fig = img.closest && img.closest('figure');
+        // El toggle de clase lo ve el observador (vigila `class`), asi que la
+        // guarda del contains() no es cosmetica: sin ella cada pasada volveria a
+        // mutar y el observador se veria a si mismo.
+        if (fig && !fig.classList.contains(NOIMG_CLASS)) fig.classList.add(NOIMG_CLASS);
+    }
+
+    // Una portada que SI carga desmarca su figura. Es la red de seguridad: si
+    // algo marco una figura por un fallo pasajero (un corte de red suelto), el
+    // propio exito lo deshace en vez de dejar la tarjeta apagada para siempre.
+    function handleImageLoad(img) {
+        const fig = img.closest && img.closest('figure');
+        if (fig && fig.classList.contains(NOIMG_CLASS)) fig.classList.remove(NOIMG_CLASS);
+    }
+
+    // Ni 'error' ni 'load' de un <img> burbujean, pero los dos SI se pueden
+    // capturar, asi que un par de listeners en document cubre tanto las tarjetas
+    // que pinta Indiegala con su asyncImgLoader como las que inyecta
+    // revealListingImages().
+    function setupImageFallback() {
+        if (setupImageFallback._done) return;
+        setupImageFallback._done = true;
+        const on = (type, fn) => document.addEventListener(type, (ev) => {
+            const img = ev.target;
+            if (img && img.tagName === 'IMG') { try { fn(img); } catch (e) {} }
+        }, true);
+        on('error', handleImageFailure);
+        on('load', handleImageLoad);
+    }
+
+    // Barrido de las portadas ya resueltas. Cubre el caso que los listeners no
+    // pueden: las que se resolvieron ANTES de que existieran, donde el evento ya
+    // paso y no vuelve. `complete` con naturalWidth 0 es la firma de un <img>
+    // que fallo, y con naturalWidth > 0 la de uno que cargo; las dos se leen sin
+    // esperar nada. Corre en cada pasada del observador, asi que la guarda del
+    // contains() de arriba es lo que lo mantiene barato.
+    const FAILED_IMG_SELECTOR = '.items-list-item figure img[src]';
+    function sweepFailedImages() {
+        document.querySelectorAll(FAILED_IMG_SELECTOR).forEach(img => {
+            if (!img.complete) return;
+            if (img.naturalWidth > 0) handleImageLoad(img);
+            else handleImageFailure(img);
+        });
+    }
+
     // Texto de la linea de estado del widget. Cadena vacia = no hay nada que
     // decir. Los dos "en pausa" van ANTES de mirar el estado de la carga: son
     // el motivo por el que no hay carga que contar.
@@ -5399,7 +5568,8 @@
 
     function injectAll() {
         try { injectStyles(); } catch (e) {}
-        try { injectCardDetail(); } catch (e) { console.error('[IG-BulkTools] injectCardDetail:', e); }
+        // Portadas que no cargan: dejar su hueco clicable (ver handleImageFailure).
+        try { setupImageFallback(); sweepFailedImages(); } catch (e) { console.error('[IG-BulkTools] sweepFailedImages:', e); }
         try { injectListing(); } catch (e) { console.error('[IG-BulkTools] injectListing:', e); }
         try { applyHideEntered(); } catch (e) { console.error('[IG-BulkTools] applyHideEntered:', e); }
         try { applyIgnored(); } catch (e) { console.error('[IG-BulkTools] applyIgnored:', e); }
