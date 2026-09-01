@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Bulk Tools (giveaway ticket queue + store links)
 // @namespace    http://tampermonkey.net/
-// @version      1.10.8
+// @version      1.11.0
 // @description  Unified ticket queue for Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another; add, remove and reorder mid-run, and tickets you cannot afford wait instead of killing the run. GalaSilver widget, prize checking, wheel alerts, remembered filters, every listing page in one. On store product pages it adds GG.deals and PCGamingWiki title-search buttons. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban.
 // @icon         data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAIKADAAQAAAABAAAAIAAAAACshmLzAAADNUlEQVRYCcVXMWxTMRB1orS0tIkixAZD2UqndEFs+QjonEosLC3pwlKpEwNITEh06BSpDCxtmoUFKVlYkBA/G+pCWErHDrCBVCWgFAiEe9a3c/Z3WpP2i5Msn893vue7s79/SnjSl5nZAqmWqBWpBdRcFJKwSa1x8WC/5VKwZSlbYI/J8T2SrVEDgH8hAKgQkOpxRkMBkOMZMtymFlA7DYVkXCYgB65FnADIOUIN53mX0QiyQ7IBiIZtGwMQhRzOkyCAqPKFDQDRzutcIQF+kUdCA4hy/p4cnlXYh2FHOuZVTaSZ1lnmnC0bY7FBnWIZgZPynsplRb/dia0EQWZuVqRyOTn3+9Nn8YeaJ8l6yETKOOdOgoPJtVXRub+q5wFocmVZTJSXyHlWy8H09vZFt7Ipfr5+Y8gdA/ispmj3BWKQ+xhh8fyrusDO2neX5TwATW2sy53HDJjgx8u6+PbgEZM42XnUQMk5RULsMn35kp4GoOzzTcM5UvPr3a5sWpGY8YVbhi2fY3wJKSgygcEixJzOUyo4oO9P1sXRVk2rAOA0RWfs+jWK2JJPPRQBINArWAzPL/iJlQEghBdh5oRooFYA0rMYA34M+VoxHrtShEKznas59J7OpYk6BdzeyWfmrmp5j3JuEyKUe1Ez6kPpfL0ysFUy1XtHQBmg73fMO+E459zOxXsDQKUrGrt9U7GyR3H22219GpAiX/JOQW/vo14Td8G5O4u6DnAaOOGoCtIBnXQhIQIhFF3Er1/wvPCmN54apwL2SAWcjy8MInS0XXMtrWQhADTVyO5tY+yUV/jU44fiwoddKr4d2cBz5wDMU2evD98A0HBMSFF3a8dwqM45zzF2jSPKjymM4dzjKm6k6bvcIn20GCmHPBVwjluuW3nm/EJiHpeRh/MWfP/Pz7F8GfEX0VsKQRALQzKCkHZ/A0ujBhSViTlUgwR7+IAvSRpA9EbTE0ohgd74R9AA4IhANKhLEkTs3yDl2mH0PMfDMe+aH0Emwx5t0DB3AoBG9EwHiADjU1BItkbY+VpDASil6MWMB2RByTz7FumN/nNqO4keryWS4wkX2PPROKS+Sc379/wvBfE4KdAnimYAAAAASUVORK5CYII=
 // @match        https://www.indiegala.com/giveaways
@@ -51,7 +51,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.10.8';
+    const SCRIPT_VERSION = '1.11.0';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     // La advertencia de automatizacion solo aplica al modulo de giveaways. En la
     // tienda este script no automatiza nada —pone dos enlaces— y avisar ahi de un
@@ -211,6 +211,8 @@
             libNothingToCheck: 'Nada por revisar: "Completed to check" está vacío.',
             libCheckingWon: 'Revisando premios ganados…',
             libNoNewWins: 'Sin premios nuevos hoy.',
+            libClosingIn: 'Cerrando esta pestaña en {n} s…',
+            libCloseBlocked: 'El navegador no dejó cerrar la pestaña: ciérrala tú.',
             libWonStatus: '🎉 ¡Ganaste {n} premio(s) hoy!',
             winWidgetTitle: '🎉 ¡Premios ganados hoy! ({n})',
             libElementNotFound: 'No encontré un elemento de la biblioteca a tiempo. Revísalo manualmente.',
@@ -339,6 +341,8 @@
             libNothingToCheck: 'Nothing to check: "Completed to check" is empty.',
             libCheckingWon: 'Checking won prizes…',
             libNoNewWins: 'No new prizes today.',
+            libClosingIn: 'Closing this tab in {n} s…',
+            libCloseBlocked: 'The browser refused to close the tab: close it yourself.',
             libWonStatus: '🎉 You won {n} prize(s) today!',
             winWidgetTitle: '🎉 Prizes won today! ({n})',
             libElementNotFound: 'Could not find a library element in time. Please check manually.',
@@ -3725,6 +3729,8 @@
     }
 
     const LIB_WAIT_MS = 20000;
+    // Margen para leer el "sin premios nuevos" antes de que la pestaña se cierre sola.
+    const LIB_CLOSE_DELAY_MS = 5000;
     const libSettle = () => abortableSleep(rand(700, 1300));
 
     // ---- Premios ganados "vistos" (persistente) -------------------------------
@@ -3821,12 +3827,15 @@
     // habiamos visto antes (widget propio in-page + toast) y los marca
     // como vistos (persistente). Al abrir esta subseccion el propio sitio da por
     // vista la notificacion de ganado.
+    // Devuelve true si anuncio algo (hubo premios nuevos), false si no habia
+    // nada que anunciar: quien la llama decide con eso si la pestaña sigue
+    // haciendo falta.
     function announceTodayWins() {
         let wins = [];
         try { wins = collectTodayWins(); } catch (e) { console.error('[IG-BulkTools] collectTodayWins:', e); }
         const seen = loadSeenWins();
         const fresh = wins.filter(w => seen.indexOf(w.gid) === -1);
-        if (!fresh.length) { showLibraryStatus(T.libNoNewWins); return; }
+        if (!fresh.length) { showLibraryStatus(T.libNoNewWins); return false; }
         saveSeenWins(seen.concat(fresh.map(w => w.gid)));
 
         const status = fmt(T.libWonStatus, { n: fresh.length });
@@ -3842,6 +3851,27 @@
         } catch (_) {}
 
         showWinWidget(fresh);
+        return true;
+    }
+
+    // Cuenta atras visible y cierre de la pestaña de auto-revision. Solo se llama
+    // cuando no hubo premios nuevos: en ese caso la pestaña —que abrio el propio
+    // script desde el widget de saldo— no deja nada que leer, ni widget ni badge
+    // en el titulo, y quedarse abierta solo es una pestaña mas que cerrar a mano.
+    //
+    // window.close() puede negarse: el navegador solo deja cerrar por script las
+    // pestañas que abrio un script, y Chrome ademas exige que su historial tenga
+    // una sola entrada, cosa que el sitio podria romper si alguna de sus pestañas
+    // internas empujara una entrada. Cuando se niega NO lanza —simplemente no
+    // pasa nada—, asi que el aviso de fallo va en un timer posterior: si la
+    // pestaña se cerro, ese timer nunca llega a correr.
+    async function closeAutoCheckTab() {
+        for (let s = Math.round(LIB_CLOSE_DELAY_MS / 1000); s > 0; s--) {
+            showLibraryStatus(T.libNoNewWins + ' ' + fmt(T.libClosingIn, { n: s }));
+            await sleep(1000);
+        }
+        try { window.close(); } catch (_) {}
+        setTimeout(() => showLibraryStatus(T.libCloseBlocked, true), 1000);
     }
 
     // Secuencia: Giveaways → Completed to check → Check all → Completed won. Cada
@@ -3912,7 +3942,9 @@
             LIB_WAIT_MS
         );
         await abortableSleep(rand(800, 1400));
-        announceTodayWins();
+        // Con premios nuevos la pestaña se queda: el widget y el badge del titulo
+        // estan para leerlos. Sin premios no hay nada que mirar y se cierra sola.
+        if (!announceTodayWins()) { await closeAutoCheckTab(); return; }
 
         const box = document.getElementById(LIB_STATUS_ID);
         if (box) setTimeout(() => { try { box.remove(); } catch (_) {} }, 8000);
