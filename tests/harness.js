@@ -36,7 +36,15 @@ const WHEEL_AVAILABLE = '<li class="menu-fortune-wheel"><a href="#" onclick="ope
 // porque los tests viejos solo cuentan imagenes reveladas y la URL les da igual.
 function cell(spec) {
     const { gid, title, lev = 0, type = 'single', price = 12, sold = 100,
-            time = '3 days left', imgSuffix = false } = spec;
+            time = '3 days left', imgSuffix = false,
+            // `wait` = la tarjeta con el lazy-load sin terminar: el sitio manda
+            // la clase y NADA del bloque de datos (ni tiempo, ni control de
+            // compra), solo el <figcaption> con el tipo. Es el estado en el que
+            // un participado y uno cargando se ven identicos.
+            wait = false,
+            // `participado` = cargada pero sin control de compra, que es lo que
+            // Indiegala manda para un Single Ticket en el que ya tienes boleto.
+            participado = false } = spec;
     const appid = imgSuffix ? `${gid}_ig` : String(gid);
     const extra = type === 'extra';
     const label = extra ? 'extra odds' : 'single ticket';
@@ -45,8 +53,8 @@ function cell(spec) {
         ? ` - <span title="Users with level ${lev} or higher can join this giveaway ">Lev. ${lev}</span>`
         : '';
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    const control = (lev > 0 || extra) ? `<div class="items-list-item-data-cont items-list-item-ticket"><div class="relative"><div class="items-list-item-tooth"></div><a class="items-list-item-ticket-click" href="#" onclick="joinGiveawayOrAuction( this, event, '${gid}', ${extra ? 1 : 0}, 'TOKEN${gid}')"></a><div class="items-list-item-data overflow-auto"><div class="left items-list-item-data-left"><div class="items-list-item-data-top items-list-item-data-left-top">time</div><div class="items-list-item-data-bottom items-list-item-data-left-bottom">${time}</div></div><div class="right items-list-item-data-right"><div class="items-list-item-data-top items-list-item-data-right-top">sold</div><div class="items-list-item-data-bottom items-list-item-data-right-bottom">${sold}</div></div><div class="right items-list-item-data-button bg-gradient-red"><a data-price="${price}" href="#">${price} iS</a></div></div></div></div>` : '';
-    return `<div class="col-3 items-list-col"><div class="items-list-item"><div class="relative"><div class="items-list-item-error display-none"><div class="items-list-item-error-inner display-none"><div class="items-list-item-error-text"><span></span><span></span></div></div></div><h5 class="items-list-item-title"><a href="/giveaways/card/${slug}/${gid}">${title}</a></h5><figure><a href="/giveaways/card/${slug}/${gid}" title="${title}"><img alt="${title} product image" class="display-none" data-img-src="https://steamcdn-a.akamaihd.net/steam/apps/${appid}/header.jpg"/></a></figure><figcaption><div class="items-list-item-type relative ${typeClass}">${label}${levSpan}</div><div class="items-list-item-data-placeholder"></div></figcaption>${control}</div></div></div>`;
+    const control = (!wait && !participado && (lev > 0 || extra)) ? `<div class="items-list-item-data-cont items-list-item-ticket"><div class="relative"><div class="items-list-item-tooth"></div><a class="items-list-item-ticket-click" href="#" onclick="joinGiveawayOrAuction( this, event, '${gid}', ${extra ? 1 : 0}, 'TOKEN${gid}')"></a><div class="items-list-item-data overflow-auto"><div class="left items-list-item-data-left"><div class="items-list-item-data-top items-list-item-data-left-top">time</div><div class="items-list-item-data-bottom items-list-item-data-left-bottom">${time}</div></div><div class="right items-list-item-data-right"><div class="items-list-item-data-top items-list-item-data-right-top">sold</div><div class="items-list-item-data-bottom items-list-item-data-right-bottom">${sold}</div></div><div class="right items-list-item-data-button bg-gradient-red"><a data-price="${price}" href="#">${price} iS</a></div></div></div></div>` : '';
+    return `<div class="col-3 items-list-col"><div class="items-list-item${wait ? ' wait' : ''}"><div class="relative"><div class="items-list-item-error display-none"><div class="items-list-item-error-inner display-none"><div class="items-list-item-error-text"><span></span><span></span></div></div></div><h5 class="items-list-item-title"><a href="/giveaways/card/${slug}/${gid}">${title}</a></h5><figure><a href="/giveaways/card/${slug}/${gid}" title="${title}"><img alt="${title} product image" class="display-none" data-img-src="https://steamcdn-a.akamaihd.net/steam/apps/${appid}/header.jpg"/></a></figure><figcaption><div class="items-list-item-type relative ${typeClass}">${label}${levSpan}</div><div class="items-list-item-data-placeholder"></div></figcaption>${control}</div></div></div>`;
 }
 
 // Barra de paginación como la del sitio: el total en la primera celda ("57
@@ -175,6 +183,12 @@ async function run({
     // pasa cuando la URL buena acaba llegando, y prueba la red de seguridad
     // (una portada que carga desmarca su figura).
     cargaPortadasAlFinal = false,
+    // Preferencia "Ocultar ya participados", como la dejaria el toggle.
+    hideEntered = false,
+    // Registro de gids ya participados, tal como lo deja rememberEnteredGid():
+    // { gid: timestamp }. Es lo que escribe executeQueue tras cada compra, y la
+    // unica fuente que delata a un item colgado en `wait`.
+    enteredGids = null,
     // Cola sembrada tal como la habria dejado saveQueue().
     queue = null,
     // Pulsa "▶ Ejecutar" y confirma el modal.
@@ -227,12 +241,14 @@ async function run({
     // igual que los escribiría saveSettings(): JSON en una sola clave.
     const store = new Map();
     store.set('ig-bulk-settings', JSON.stringify({
-        hideEntered: false, showIgnored: false, balanceMin: false, queueMin: false,
+        hideEntered, showIgnored: false, balanceMin: false, queueMin: false,
         rememberFilters, loadAllPages,
         filters: { sort: 'expiry', order: 'asc', level: String(level), search: '', page: savedPage }
     }));
     // Misma clave y mismo formato que saveQueue(): JSON en 'ig-st-queue'.
     if (queue) store.set('ig-st-queue', JSON.stringify(queue));
+    // Misma clave y mismo formato que saveEnteredGids(): JSON en una sola clave.
+    if (enteredGids) store.set('ig-bulk-entered-gids', JSON.stringify(enteredGids));
     w.GM_getValue = (k, d) => (store.has(k) ? store.get(k) : d);
     w.GM_setValue = (k, v) => store.set(k, v);
     w.unsafeWindow = w;
@@ -485,6 +501,14 @@ async function run({
         masBotones: scope ? scope.querySelectorAll('.ig-q-btn').length : 0,
         badges: scope ? scope.querySelectorAll('.ig-bulk-join-badge').length : 0,
         cruces: scope ? scope.querySelectorAll('.ig-ign-btn').length : 0,
+        // Gids que "Ocultar ya participados" escondio. Se lee la clase que pone
+        // applyHideEntered, no el estilo: jsdom no hace layout y el display real
+        // no se puede medir aqui.
+        ocultosParticipados: scope ? Array.from(scope.querySelectorAll('.items-list-col.ig-entered-hidden')).map(c => {
+            const a = c.querySelector('.items-list-item-title a');
+            const mm = a && (a.getAttribute('href') || '').match(/(\d+)\/?$/);
+            return mm ? mm[1] : '?';
+        }) : [],
         // Imágenes reveladas. La cuenta que decide es la de las TRAIDAS: las
         // nativas del fixture no tienen src porque en jsdom no corre el
         // <script> con el que el sitio las revela, y contarlas mediria el

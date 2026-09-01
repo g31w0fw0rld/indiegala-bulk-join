@@ -22,6 +22,7 @@ node test-tooltip-doble.js
 node test-cola-desde-ficha.js
 node test-portada-sin-imagen.js
 node test-boletos-comprados.js
+node test-ocultar-participados.js
 ```
 
 ## Control negativo

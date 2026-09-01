@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Bulk Tools (giveaway ticket queue + store links)
 // @namespace    http://tampermonkey.net/
-// @version      1.10.7
+// @version      1.10.8
 // @description  Unified ticket queue for Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another; add, remove and reorder mid-run, and tickets you cannot afford wait instead of killing the run. GalaSilver widget, prize checking, wheel alerts, remembered filters, every listing page in one. On store product pages it adds GG.deals and PCGamingWiki title-search buttons. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban.
 // @icon         data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAIKADAAQAAAABAAAAIAAAAACshmLzAAADNUlEQVRYCcVXMWxTMRB1orS0tIkixAZD2UqndEFs+QjonEosLC3pwlKpEwNITEh06BSpDCxtmoUFKVlYkBA/G+pCWErHDrCBVCWgFAiEe9a3c/Z3WpP2i5Msn893vue7s79/SnjSl5nZAqmWqBWpBdRcFJKwSa1x8WC/5VKwZSlbYI/J8T2SrVEDgH8hAKgQkOpxRkMBkOMZMtymFlA7DYVkXCYgB65FnADIOUIN53mX0QiyQ7IBiIZtGwMQhRzOkyCAqPKFDQDRzutcIQF+kUdCA4hy/p4cnlXYh2FHOuZVTaSZ1lnmnC0bY7FBnWIZgZPynsplRb/dia0EQWZuVqRyOTn3+9Nn8YeaJ8l6yETKOOdOgoPJtVXRub+q5wFocmVZTJSXyHlWy8H09vZFt7Ipfr5+Y8gdA/ispmj3BWKQ+xhh8fyrusDO2neX5TwATW2sy53HDJjgx8u6+PbgEZM42XnUQMk5RULsMn35kp4GoOzzTcM5UvPr3a5sWpGY8YVbhi2fY3wJKSgygcEixJzOUyo4oO9P1sXRVk2rAOA0RWfs+jWK2JJPPRQBINArWAzPL/iJlQEghBdh5oRooFYA0rMYA34M+VoxHrtShEKznas59J7OpYk6BdzeyWfmrmp5j3JuEyKUe1Ez6kPpfL0ysFUy1XtHQBmg73fMO+E459zOxXsDQKUrGrt9U7GyR3H22219GpAiX/JOQW/vo14Td8G5O4u6DnAaOOGoCtIBnXQhIQIhFF3Er1/wvPCmN54apwL2SAWcjy8MInS0XXMtrWQhADTVyO5tY+yUV/jU44fiwoddKr4d2cBz5wDMU2evD98A0HBMSFF3a8dwqM45zzF2jSPKjymM4dzjKm6k6bvcIn20GCmHPBVwjluuW3nm/EJiHpeRh/MWfP/Pz7F8GfEX0VsKQRALQzKCkHZ/A0ujBhSViTlUgwR7+IAvSRpA9EbTE0ohgd74R9AA4IhANKhLEkTs3yDl2mH0PMfDMe+aH0Emwx5t0DB3AoBG9EwHiADjU1BItkbY+VpDASil6MWMB2RByTz7FumN/nNqO4keryWS4wkX2PPROKS+Sc379/wvBfE4KdAnimYAAAAASUVORK5CYII=
 // @match        https://www.indiegala.com/giveaways
@@ -51,7 +51,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.10.7';
+    const SCRIPT_VERSION = '1.10.8';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     // La advertencia de automatizacion solo aplica al modulo de giveaways. En la
     // tienda este script no automatiza nada —pone dos enlaces— y avisar ahi de un
@@ -181,7 +181,7 @@
             widgetCheckBtnTooltip: 'Abre tu biblioteca en una pestaña nueva y revisa automáticamente los giveaways completados por ganar (Check all).',
             widgetBalanceUnknown: '— iS',
             widgetHideEntered: 'Ocultar ya participados',
-            widgetHideEnteredTooltip: 'Oculta del listado los giveaways en los que ya tienes boleto. Se recuerda al recargar hasta que lo desmarques.',
+            widgetHideEnteredTooltip: 'Oculta del listado los giveaways de tipo Single Ticket en los que ya tienes boleto. Los Extra Odds se quedan: ahí puedes seguir comprando boletos aunque ya tengas uno. Se recuerda al recargar hasta que lo desmarques.',
             widgetShowIgnored: 'Mostrar ocultos por mí',
             widgetShowIgnoredTooltip: 'Vuelve a mostrar (atenuados y con marco rojo) los giveaways que ocultaste con ✕, para poder sacarlos de la lista con el botón ↺. No los desoculta de forma permanente.',
             widgetClearIgnored: '🧹 Limpiar ocultos ({n})',
@@ -309,7 +309,7 @@
             widgetCheckBtnTooltip: 'Opens your library in a new tab and automatically checks completed giveaways to see if you won (Check all).',
             widgetBalanceUnknown: '— iS',
             widgetHideEntered: 'Hide already entered',
-            widgetHideEnteredTooltip: 'Hides from the listing the giveaways you already hold a ticket in. Remembered across reloads until you uncheck it.',
+            widgetHideEnteredTooltip: 'Hides from the listing the Single Ticket giveaways you already hold a ticket in. Extra Odds stay: there you can keep buying tickets even if you already hold one. Remembered across reloads until you uncheck it.',
             widgetShowIgnored: 'Show the ones I hid',
             widgetShowIgnoredTooltip: 'Brings back (dimmed, with a red frame) the giveaways you hid with ✕, so you can take them off the list with the ↺ button. It does not un-hide them permanently.',
             widgetClearIgnored: '🧹 Clear hidden ({n})',
@@ -395,7 +395,7 @@
                 '• El widget lleva la cuenta atrás de la próxima ruleta, con la hora en tu reloj, y pasa a decir «disponible ahora» cuando la hay. Se repinta sola cada medio minuto. Ojo con la hora: Indiegala no publica en ninguna parte cuándo reinicia la ruleta —no está ni en la página, ni en su JS, ni en los datos de tu cuenta—, así que el script cuenta hacia las 00:00 UTC, que es cuando empieza su día, y apunta en la consola la ventana en la que ve aparecer la ruleta por si algún día no cuadra.',
                 '• Tras girar te dice el premio y recarga al cerrar tú el popup, para que el saldo quede al día. Nunca recarga con la cola corriendo ni con un diálogo abierto.',
                 '▸ Opciones del listado',
-                '• Recordar filtros de búsqueda (orden, nivel, texto y página), ocultar los giveaways en los que ya tienes boleto y elegir el idioma del script (es/en/Auto).',
+                '• Recordar filtros de búsqueda (orden, nivel, texto y página), ocultar los Single Ticket en los que ya tienes boleto —los Extra Odds no se ocultan, ahí puedes comprar más— y elegir el idioma del script (es/en/Auto).',
                 '• "Cargar todas las páginas" trae a la que estás viendo el resto de las páginas del listado, con el orden y el filtro de nivel que tengas puestos. Las tarjetas llegan enteras, así que la cola, el ⚠×N y el ✕ funcionan igual en ellas. Con la casilla puesta se hace solo en cada carga de la página, y no carga nada mientras haya ruleta por girar, mientras corra la cola, ni sobre resultados de búsqueda —ahí Indiegala ya te los da todos de una vez—. Mientras está marcada, "Recordar filtros" deja de reaplicar la página guardada: con todas cargadas no significa nada. Cuando ya está todo dentro, los números de la paginación se pliegan —el total sigue a la vista—; si la carga se paró a medias, se quedan, que es cuando sirven.',
                 '• El botón ✕ de cada tarjeta oculta ese giveaway (solo en tu navegador), en la esquina opuesta al ＋ o al badge ⚠×N. "Mostrar ocultos por mí" los devuelve atenuados para sacarlos de la lista con ↺, y "Limpiar ocultos (N)" la vacía de golpe.',
                 '• La lista de ocultos se limpia sola: cada oculto se va cuando su giveaway termina, calculado con el "N days left" de la propia tarjeta. No hace falta vaciarla a mano para que no engorde.',
@@ -439,7 +439,7 @@
                 '• The widget counts down to the next wheel, with the time on your own clock, and switches to «available now» when there is one. It redraws itself every half minute. About that hour: Indiegala states nowhere when the wheel resets —not on the page, not in its JS, not in your account data— so the script counts towards 00:00 UTC, which is when its day starts, and logs to the console the window in which it sees the wheel show up, in case it ever does not match.',
                 '• After a spin it tells you the prize and reloads when you close the popup, so the balance is up to date. It never reloads while the queue runs or a dialog is open.',
                 '▸ Listing options',
-                '• Remember search filters (sort, level, text and page), hide giveaways you already entered and choose the script language (es/en/Auto).',
+                '• Remember search filters (sort, level, text and page), hide the Single Ticket giveaways you already entered —Extra Odds are never hidden, you can still buy more there— and choose the script language (es/en/Auto).',
                 '• "Load every page" pulls the rest of the listing\'s pages into the one you are on, keeping the sort order and level filter you have set. The cards arrive whole, so the queue, the ⚠×N and the ✕ work the same on them. With the box ticked it happens on its own on every page load, and nothing is fetched while there is a wheel to spin, while the queue runs, or over search results — Indiegala already hands you all of those at once. While it is ticked, "Remember search filters" stops re-applying the saved page: with everything loaded it means nothing. Once everything is in, the pagination numbers fold away — the total stays visible —; if the load stopped halfway they stay, which is when they are useful.',
                 '• The ✕ button on each card hides that giveaway (in your browser only), in the corner opposite the ＋ or the ⚠×N badge. "Show the ones I hid" brings them back dimmed so you can take them off the list with ↺, and "Clear hidden (N)" empties it in one go.',
                 '• The hidden list cleans itself up: each entry drops off when its giveaway ends, worked out from the card\'s own "N days left". You never have to empty it by hand to keep it from growing.',
@@ -4380,6 +4380,11 @@
     // cambia a verde / check). Por eso: si el item YA renderizo sus datos
     // (items-list-item-data-cont presente) pero NO tiene boton para unirse ->
     // ya participaste (o no es joineable) -> se oculta.
+    //
+    // Todo esto describe el Single Ticket, que es el unico que se agota al
+    // participar. En Extra Odds el control de compra no se va nunca porque puedes
+    // comprar mas boletos, y ademas no queremos ocultarlos: isAlreadyEntered los
+    // descarta de entrada, antes de mirar nada del DOM.
     const ENTERED_SELECTORS = [
         '.items-list-item-data-button.bg-gradient-green',
         '.items-list-item-ticket-click.on',
@@ -4446,6 +4451,19 @@
         if (!a) return null;
         const m = (a.getAttribute('href') || '').match(/\/(\d+)\/?$/);
         return m ? m[1] : null;
+    }
+
+    // Extra Odds vs Single Ticket, leido de la etiqueta de tipo de la tarjeta.
+    // Vive aqui y no dentro de injectListing porque lo necesitan tres pasadas
+    // distintas (ocultar participados, boton ✕ e inyeccion) y cada una lo leia
+    // por su cuenta. El <figcaption> con el tipo lo sirve el sitio SIEMPRE,
+    // tambien en los items todavia en `wait`: lo que llega tarde es el bloque de
+    // datos y el control de compra, no la etiqueta.
+    function isExtraOddsItem(item) {
+        const typeEl = item && item.querySelector('.items-list-item-type');
+        if (!typeEl) return false;
+        return typeEl.classList.contains('items-list-item-type-indiegala')
+            || /extra\s*odds/i.test((typeEl.textContent || '').trim());
     }
 
     // -------- Cuando termina un giveaway, segun su propia tarjeta --------
@@ -4650,6 +4668,19 @@
     //     boton porque ya no puedes volver a entrar): queda sin data-cont/boton.
     function isAlreadyEntered(item) {
         if (!item) return false;
+        // Extra Odds NUNCA se oculta, tengas boleto o no. Ahi se compran varios
+        // boletos del mismo giveaway —es el caso de uso del script, con tope de
+        // 50—, asi que "ya participado" no significa "aqui ya no hay nada que
+        // hacer": esconderlo te quitaria de la vista justo lo que quieres volver
+        // a comprar. Solo el Single Ticket se agota al participar. Quien quiera
+        // perder de vista un Extra Odds concreto tiene el ✕ de la tarjeta, que es
+        // decision suya y no deduccion nuestra.
+        //
+        // El guard va ARRIBA del todo a proposito. Sin el, la rama (a) de `wait`
+        // si ocultaba Extra Odds ya comprados por la cola —executeQueue apunta su
+        // gid en enteredGids al recibir 'ok'—, pero solo cuando al sitio se le
+        // colgaba el lazy-load de esa tarjeta: desaparecian a veces y sin patron.
+        if (isExtraOddsItem(item)) return false;
         // Item en `wait` (lazy-load sin terminar). El DOM NO permite distinguir
         // "cargando" de "participado": ninguno de los dos tiene control para
         // unirse, y lo unico que los separa es la propia clase `wait`. Ademas
@@ -4773,10 +4804,7 @@
             // Esquina opuesta al control propio de la tarjeta: el badge de Extra
             // Odds ocupa la derecha, el ＋ de Single Ticket la izquierda. Se
             // recalcula cada pasada por el mismo motivo que el gid.
-            const typeEl = item.querySelector('.items-list-item-type');
-            const typeText = ((typeEl && typeEl.textContent) || '').trim().toLowerCase();
-            const isExtraOdds = (typeEl && typeEl.classList.contains('items-list-item-type-indiegala'))
-                || /extra\s*odds/i.test(typeText);
+            const isExtraOdds = isExtraOddsItem(item);
             btn.classList.toggle('ig-ign-left', isExtraOdds);
             btn.classList.toggle('ig-ign-right', !isExtraOdds);
             btn.classList.toggle('ig-ign-btn-undo', ignored);
@@ -4836,8 +4864,7 @@
             if (cs.position === 'static') host.style.position = 'relative';
 
             const typeText = (typeEl.textContent || '').trim().toLowerCase();
-            const isExtraOdds = typeEl.classList.contains('items-list-item-type-indiegala')
-                || /extra\s*odds/i.test(typeText);
+            const isExtraOdds = isExtraOddsItem(item);
             const isSingleTicket = /^single\s*ticket/.test(typeText);
 
             // Extra Odds: badge de bulk-join (en cualquier listado)
