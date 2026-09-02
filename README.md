@@ -30,6 +30,10 @@ Tampermonkey userscript that adds a unified ticket-purchase queue and utilities 
 
 *Store product page: GG.deals and PCGamingWiki close the price box, right under Add to Cart, in each brand's colour so they do not pass for another button of the store. Games, DLC and packs all get the same pair. / Ficha de la tienda: GG.deals y PCGamingWiki cierran la caja de precio, justo debajo de Add to Cart, con el color de cada marca para que no se confundan con otro botón de la tienda. Juegos, DLC y packs llevan el mismo par.*
 
+<img src="docs/screenshot-store-mobile.png" width="375" alt="The same two buttons closing the price box at phone width">
+
+*The same page on a phone: the pair still closes the price box under Add to Cart, sharing one row at full width. / La misma ficha en un móvil: el par sigue cerrando la caja de precio bajo Add to Cart, compartiendo un renglón a todo el ancho.*
+
 ## English
 
 ### What it does
