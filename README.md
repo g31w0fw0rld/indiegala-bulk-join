@@ -5,6 +5,12 @@ Userscript that adds a unified ticket-purchase queue and utilities to Indiegala 
 > [!WARNING]
 > **USE AT YOUR OWN RISK / USO BAJO TU PROPIO RIESGO:** automating purchases violates Indiegala's anti-spam policy and may cause a permanent ban. / Automatizar compras viola la política anti-spam de Indiegala y puede causar un baneo permanente.
 
+**⚡ Quick install / Instalación rápida:** **[Install / Instalar](https://github.com/g31w0fw0rld/indiegala-bulk-join/raw/main/indiegala-bulk-join.user.js)** — also on / también en [GreasyFork](https://greasyfork.org/scripts/576095) · [OpenUserJS](https://openuserjs.org/scripts/g31w0fw0rldgmail.com/Indiegala_Bulk_Tools_%28giveaway_ticket_queue_+_store_links%29).
+
+> You need a userscript manager first: [Violentmonkey](https://violentmonkey.github.io/) (open source) or [Tampermonkey](https://www.tampermonkey.net/). On Chrome and Edge, also turn on **Allow user scripts** on the extension's own page in `chrome://extensions` — without it nothing runs. Step-by-step under [English](#english).
+>
+> Necesitas antes un gestor de userscripts: [Violentmonkey](https://violentmonkey.github.io/) (código abierto) o [Tampermonkey](https://www.tampermonkey.net/). En Chrome y Edge, activa además **Allow user scripts** en la página de la propia extensión en `chrome://extensions`; sin eso no se ejecuta nada. Pasos detallados en [Español](#español).
+
 ![The queue panel, the GalaSilver widget with the wheel countdown and the buttons the script injects on indiegala.com/giveaways](docs/screenshot-giveaways.png)
 
 ***Queue panel** (bottom left): 16 tickets for 197 iS, one giveaway queued ×10, and a row dimmed with ⏳ — that one is short on GalaSilver, so the run skips it and buys it later instead of stopping. Every row keeps its ▲▼, and the order of the list is the order of execution, mid-run included. **GalaSilver widget** (top right): balance, what the whole queue is missing, GalaCredit, and the wheel countdown on your own clock. On each card: ＋ to queue a Single Ticket, ✕ in the opposite corner to hide that giveaway until it ends, ✓ for the ones already queued, and ⚠×N on Extra Odds cards, where N is how many tickets your balance covers. / **Panel de la cola** (abajo a la izquierda): 16 boletos por 197 iS, un giveaway encolado ×10, y una fila atenuada con ⏳ — a esa le falta GalaSilver, así que la corrida la salta y la compra luego en vez de pararse. Cada fila conserva sus ▲▼, y el orden de la lista es el orden de ejecución, también a mitad de corrida. **Widget de GalaSilver** (arriba a la derecha): saldo, cuánto le falta a la cola entera, GalaCredit, y la cuenta atrás de la ruleta en tu reloj. En cada tarjeta: ＋ para encolar un Single Ticket, ✕ en la esquina opuesta para ocultar ese giveaway hasta que termine, ✓ en los que ya están en cola, y ⚠×N en las de Extra Odds, donde N es cuántos boletos cubre tu saldo.*
@@ -89,7 +95,7 @@ Userscript that adds a unified ticket-purchase queue and utilities to Indiegala 
 
 **Install:**
 1. Install a userscript manager: [Violentmonkey](https://violentmonkey.github.io/) (open source, Chrome/Edge/Firefox) or [Tampermonkey](https://www.tampermonkey.net/). On Chrome and Edge, also turn on **Allow user scripts** on the extension's own page in `chrome://extensions` — without it nothing runs.
-2. Open the installer: [indiegala-bulk-join.user.js](https://github.com/g31w0fw0rld/indiegala-bulk-join/raw/main/indiegala-bulk-join.user.js) (also on [GreasyFork](https://greasyfork.org/es-419/users/1590477-g31w) and [OpenUserJS](https://openuserjs.org/users/g31w0fw0rldgmail.com/scripts)).
+2. Open the installer: [indiegala-bulk-join.user.js](https://github.com/g31w0fw0rld/indiegala-bulk-join/raw/main/indiegala-bulk-join.user.js) (also on [GreasyFork](https://greasyfork.org/scripts/576095) and [OpenUserJS](https://openuserjs.org/scripts/g31w0fw0rldgmail.com/Indiegala_Bulk_Tools_%28giveaway_ticket_queue_+_store_links%29)).
 
 **Sites:** `indiegala.com/giveaways`, `indiegala.com/library`, `indiegala.com/store/game/*` and `indiegala.com/store/product/*`
 
@@ -144,7 +150,7 @@ Userscript that adds a unified ticket-purchase queue and utilities to Indiegala 
 
 **Instalación:**
 1. Instala un gestor de userscripts: [Violentmonkey](https://violentmonkey.github.io/) (código abierto, Chrome/Edge/Firefox) o [Tampermonkey](https://www.tampermonkey.net/). En Chrome y Edge, activa además **Allow user scripts** en la página de la propia extensión en `chrome://extensions`; sin eso no se ejecuta nada.
-2. Abre el instalador: [indiegala-bulk-join.user.js](https://github.com/g31w0fw0rld/indiegala-bulk-join/raw/main/indiegala-bulk-join.user.js) (también en [GreasyFork](https://greasyfork.org/es-419/users/1590477-g31w) y [OpenUserJS](https://openuserjs.org/users/g31w0fw0rldgmail.com/scripts)).
+2. Abre el instalador: [indiegala-bulk-join.user.js](https://github.com/g31w0fw0rld/indiegala-bulk-join/raw/main/indiegala-bulk-join.user.js) (también en [GreasyFork](https://greasyfork.org/scripts/576095) y [OpenUserJS](https://openuserjs.org/scripts/g31w0fw0rldgmail.com/Indiegala_Bulk_Tools_%28giveaway_ticket_queue_+_store_links%29)).
 
 **Sitios:** `indiegala.com/giveaways`, `indiegala.com/library`, `indiegala.com/store/game/*` e `indiegala.com/store/product/*`
 

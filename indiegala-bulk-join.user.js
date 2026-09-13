@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Indiegala Bulk Tools (giveaway ticket queue + store links)
 // @namespace    http://tampermonkey.net/
-// @version      1.11.0
-// @description  Unified ticket queue for Indiegala giveaways, mixing Single Ticket and Extra Odds, bought one after another; add, remove and reorder mid-run, and tickets you cannot afford wait instead of killing the run. GalaSilver widget, prize checking, wheel alerts, remembered filters, every listing page in one. On store product pages it adds GG.deals and PCGamingWiki title-search buttons. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban.
+// @version      1.11.1
+// @description  Ticket queue for Indiegala giveaways. Entering is one click per giveaway and per ticket, and the moment your silver runs out the run dies and you start it again by hand. This queues them all instead —add, remove and reorder mid-run— and a ticket you cannot afford waits its turn rather than stopping everything. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban. More in "Learn more".
 // @icon         data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAIKADAAQAAAABAAAAIAAAAACshmLzAAADNUlEQVRYCcVXMWxTMRB1orS0tIkixAZD2UqndEFs+QjonEosLC3pwlKpEwNITEh06BSpDCxtmoUFKVlYkBA/G+pCWErHDrCBVCWgFAiEe9a3c/Z3WpP2i5Msn893vue7s79/SnjSl5nZAqmWqBWpBdRcFJKwSa1x8WC/5VKwZSlbYI/J8T2SrVEDgH8hAKgQkOpxRkMBkOMZMtymFlA7DYVkXCYgB65FnADIOUIN53mX0QiyQ7IBiIZtGwMQhRzOkyCAqPKFDQDRzutcIQF+kUdCA4hy/p4cnlXYh2FHOuZVTaSZ1lnmnC0bY7FBnWIZgZPynsplRb/dia0EQWZuVqRyOTn3+9Nn8YeaJ8l6yETKOOdOgoPJtVXRub+q5wFocmVZTJSXyHlWy8H09vZFt7Ipfr5+Y8gdA/ispmj3BWKQ+xhh8fyrusDO2neX5TwATW2sy53HDJjgx8u6+PbgEZM42XnUQMk5RULsMn35kp4GoOzzTcM5UvPr3a5sWpGY8YVbhi2fY3wJKSgygcEixJzOUyo4oO9P1sXRVk2rAOA0RWfs+jWK2JJPPRQBINArWAzPL/iJlQEghBdh5oRooFYA0rMYA34M+VoxHrtShEKznas59J7OpYk6BdzeyWfmrmp5j3JuEyKUe1Ez6kPpfL0ysFUy1XtHQBmg73fMO+E459zOxXsDQKUrGrt9U7GyR3H22219GpAiX/JOQW/vo14Td8G5O4u6DnAaOOGoCtIBnXQhIQIhFF3Er1/wvPCmN54apwL2SAWcjy8MInS0XXMtrWQhADTVyO5tY+yUV/jU44fiwoddKr4d2cBz5wDMU2evD98A0HBMSFF3a8dwqM45zzF2jSPKjymM4dzjKm6k6bvcIn20GCmHPBVwjluuW3nm/EJiHpeRh/MWfP/Pz7F8GfEX0VsKQRALQzKCkHZ/A0ujBhSViTlUgwR7+IAvSRpA9EbTE0ohgd74R9AA4IhANKhLEkTs3yDl2mH0PMfDMe+aH0Emwx5t0DB3AoBG9EwHiADjU1BItkbY+VpDASil6MWMB2RByTz7FumN/nNqO4keryWS4wkX2PPROKS+Sc379/wvBfE4KdAnimYAAAAASUVORK5CYII=
 // @match        https://www.indiegala.com/giveaways
 // @match        https://www.indiegala.com/giveaways/*
@@ -51,7 +51,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.11.0';
+    const SCRIPT_VERSION = '1.11.1';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     // La advertencia de automatizacion solo aplica al modulo de giveaways. En la
     // tienda este script no automatiza nada —pone dos enlaces— y avisar ahi de un
