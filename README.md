@@ -36,6 +36,10 @@ Userscript that adds a unified ticket-purchase queue and utilities to Indiegala 
 
 *The same on a phone: the status line fits under its own checkbox, and at the foot of the listing the folded pagination leaves the site's total on its own. / Lo mismo en un móvil: la línea de estado cabe bajo su propia casilla, y al pie del listado la paginación plegada deja solo el total del sitio.*
 
+![Two hidden giveaways shown dimmed with "Show the ones I hid": one hidden with ✕ offering the 🚫 to hide its whole game, and one hidden because its game was](docs/screenshot-hide.png)
+
+*Hiding, with "Show the ones I hid" ticked so the hidden cards come back dimmed instead of vanishing. **SQUASER 2** was hidden with ✕: its ＋ has stepped aside — queueing a giveaway you hid makes no sense — and that corner now holds the **🚫**, which hides every giveaway of the same game, current and future. **Two Worlds II** is hidden because its game is: it carries only the **↺**, and that ↺ undoes the rule for the game, not just this card. The widget counts each list on its own button: **Clear hidden (5)** for the cards hidden one by one, **Clear hidden games (3)** for the games. / Ocultar, con "Mostrar ocultos por mí" marcada para que las tarjetas ocultas vuelvan atenuadas en vez de desaparecer. **SQUASER 2** se ocultó con ✕: su ＋ se ha apartado —encolar un giveaway que ocultaste no tiene sentido— y en esa esquina queda el **🚫**, que oculta todos los giveaways del mismo juego, los de ahora y los que vengan. **Two Worlds II** está oculto porque lo está su juego: solo lleva el **↺**, y ese ↺ deshace la regla del juego, no solo esta tarjeta. El widget cuenta cada lista en su propio botón: **Clear hidden (5)** para las tarjetas ocultadas una a una, **Clear hidden games (3)** para los juegos.*
+
 ![The GG.deals and PCGamingWiki buttons closing the price box on an IndieGala store product page](docs/screenshot-store.png)
 
 *Store product page: GG.deals and PCGamingWiki close the price box, right under Add to Cart, in each brand's colour so they do not pass for another button of the store. Games, DLC and packs all get the same pair. / Ficha de la tienda: GG.deals y PCGamingWiki cierran la caja de precio, justo debajo de Add to Cart, con el color de cada marca para que no se confundan con otro botón de la tienda. Juegos, DLC y packs llevan el mismo par.*
@@ -78,6 +82,7 @@ Userscript that adds a unified ticket-purchase queue and utilities to Indiegala 
 - **Hide giveaways you already entered** (remembered across reloads).
 - **Hide a giveaway by hand:** the **✕** on each card (opposite corner to that card's own control) hides it, in your browser only. **"Show the ones I hid"** brings them back dimmed so you can restore one with **↺**, and **"Clear hidden (N)"** empties the whole list.
 - **The hidden list cleans itself up.** Each entry drops off when its giveaway ends — worked out from the card's own "N days left" — so you never have to empty it by hand to keep it from growing.
+- **Hide a whole game:** on a card you hid with **✕**, the **🚫** — in the corner where the ＋ or the ⚠×N was, since queueing a hidden giveaway makes no sense — hides every giveaway of that game, the current ones and any that come later, including the ones "Load every page" brings in. The game is recognised by its Steam cover (the appid), or by its title when the card has none. This list does not expire, because a game does not end the way a giveaway does: undo it with the **↺** on any of its cards or with **"Clear hidden games (N)"**. The giveaways you hid one by one with ✕ stay hidden either way.
 - **Script language:** Spanish, English or Auto.
 - **"Learn more"** button with a summary inside the page.
 - Layout adapted to phones.
@@ -133,6 +138,7 @@ Userscript that adds a unified ticket-purchase queue and utilities to Indiegala 
 - **Ocultar los giveaways en los que ya tienes boleto** (se recuerda al recargar).
 - **Ocultar un giveaway a mano:** la **✕** de cada tarjeta (en la esquina opuesta al control propio de esa tarjeta) lo oculta, solo en tu navegador. **"Mostrar ocultos por mí"** los devuelve atenuados para restaurar uno con **↺**, y **"Limpiar ocultos (N)"** vacía la lista entera.
 - **La lista de ocultos se limpia sola.** Cada oculto se va cuando termina su giveaway —calculado con el "N days left" de la propia tarjeta—, así que no hace falta vaciarla a mano para que no engorde.
+- **Ocultar un juego entero:** en una tarjeta que ocultaste con **✕**, el **🚫** —en la esquina donde estaba el ＋ o el ⚠×N, porque encolar un giveaway oculto no tiene sentido— oculta todos los giveaways de ese juego, los de ahora y los que salgan después, también los que traiga "Cargar todas las páginas". El juego se reconoce por su portada de Steam (el appid) o, si la tarjeta no la trae, por el título. Esta lista no caduca, porque un juego no termina como un giveaway: se deshace con el **↺** de cualquiera de sus tarjetas o con **"Limpiar juegos ocultos (N)"**. Los que ocultaste uno a uno con ✕ siguen ocultos en cualquier caso.
 - **Idioma del script:** español, inglés o Auto.
 - Botón **"Saber más"** con un resumen dentro de la página.
 - Layout adaptado a móviles.

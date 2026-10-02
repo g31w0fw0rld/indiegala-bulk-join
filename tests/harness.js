@@ -44,8 +44,21 @@ function cell(spec) {
             wait = false,
             // `participado` = cargada pero sin control de compra, que es lo que
             // Indiegala manda para un Single Ticket en el que ya tienes boleto.
-            participado = false } = spec;
-    const appid = imgSuffix ? `${gid}_ig` : String(gid);
+            participado = false,
+            // `appid` = el juego de la portada. Por defecto el gid, o sea un
+            // juego distinto por tarjeta; se fija para tener dos giveaways del
+            // mismo juego. `null` = una tarjeta sin cabecera de Steam (juego que
+            // no es de Steam), que es cuando el script cae al titulo.
+            appid: appidSpec,
+            // Ruta de Steam completa en vez de appid, para las que no son
+            // `apps/`: el listado real trae paquetes como `subs/51209`.
+            imgPath = null } = spec;
+    const appBase = appidSpec === undefined ? String(gid) : appidSpec;
+    const appid = imgSuffix ? `${appBase}_ig` : appBase;
+    const imgUrl = imgPath ? `https://steamcdn-a.akamaihd.net/steam/${imgPath}/header.jpg`
+        : appBase === null
+        ? 'https://www.indiegala.com/img/no-image.jpg'
+        : `https://steamcdn-a.akamaihd.net/steam/apps/${appid}/header.jpg`;
     const extra = type === 'extra';
     const label = extra ? 'extra odds' : 'single ticket';
     const typeClass = extra ? 'items-list-item-type-guaranteed' : 'items-list-item-type-not-guaranteed';
@@ -54,7 +67,7 @@ function cell(spec) {
         : '';
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     const control = (!wait && !participado && (lev > 0 || extra)) ? `<div class="items-list-item-data-cont items-list-item-ticket"><div class="relative"><div class="items-list-item-tooth"></div><a class="items-list-item-ticket-click" href="#" onclick="joinGiveawayOrAuction( this, event, '${gid}', ${extra ? 1 : 0}, 'TOKEN${gid}')"></a><div class="items-list-item-data overflow-auto"><div class="left items-list-item-data-left"><div class="items-list-item-data-top items-list-item-data-left-top">time</div><div class="items-list-item-data-bottom items-list-item-data-left-bottom">${time}</div></div><div class="right items-list-item-data-right"><div class="items-list-item-data-top items-list-item-data-right-top">sold</div><div class="items-list-item-data-bottom items-list-item-data-right-bottom">${sold}</div></div><div class="right items-list-item-data-button bg-gradient-red"><a data-price="${price}" href="#">${price} iS</a></div></div></div></div>` : '';
-    return `<div class="col-3 items-list-col"><div class="items-list-item${wait ? ' wait' : ''}"><div class="relative"><div class="items-list-item-error display-none"><div class="items-list-item-error-inner display-none"><div class="items-list-item-error-text"><span></span><span></span></div></div></div><h5 class="items-list-item-title"><a href="/giveaways/card/${slug}/${gid}">${title}</a></h5><figure><a href="/giveaways/card/${slug}/${gid}" title="${title}"><img alt="${title} product image" class="display-none" data-img-src="https://steamcdn-a.akamaihd.net/steam/apps/${appid}/header.jpg"/></a></figure><figcaption><div class="items-list-item-type relative ${typeClass}">${label}${levSpan}</div><div class="items-list-item-data-placeholder"></div></figcaption>${control}</div></div></div>`;
+    return `<div class="col-3 items-list-col"><div class="items-list-item${wait ? ' wait' : ''}"><div class="relative"><div class="items-list-item-error display-none"><div class="items-list-item-error-inner display-none"><div class="items-list-item-error-text"><span></span><span></span></div></div></div><h5 class="items-list-item-title"><a href="/giveaways/card/${slug}/${gid}">${title}</a></h5><figure><a href="/giveaways/card/${slug}/${gid}" title="${title}"><img alt="${title} product image" class="display-none" data-img-src="${imgUrl}"/></a></figure><figcaption><div class="items-list-item-type relative ${typeClass}">${label}${levSpan}</div><div class="items-list-item-data-placeholder"></div></figcaption>${control}</div></div></div>`;
 }
 
 // Barra de paginación como la del sitio: el total en la primera celda ("57
@@ -216,7 +229,22 @@ async function run({
     // no aparecia nunca — que es exactamente lo que un fixture inventado hace.
     fichas = {},
     // gid de la tarjeta cuyo badge ⚠×N se pulsa para abrir el modal de encolar.
-    abrirModal = null
+    abrirModal = null,
+    // Ocultos sembrados como los dejarian saveIgnoredGids() ({ gid: { t, e } })
+    // y saveIgnoredGames() ({ clave: { t, n } }), y la casilla "Mostrar ocultos".
+    ignoredGids = null,
+    ignoredGames = null,
+    showIgnored = false,
+    // Clics en controles de tarjeta, en orden, tras asentarse la pagina:
+    // [{ gid, sel }]. Se pulsa el primero que case DENTRO de la celda del gid
+    // en el listado, que es lo que pulsaria el usuario; sin gid, en el documento
+    // (los botones del widget).
+    pulsar = [],
+    // Confirma (true) o cancela (false) el showConfirm que salga tras un clic.
+    confirmar = null,
+    // Provoca UNA mutacion dentro de la ventana de reposo: el control positivo
+    // de mutacionesEnReposo (si la sonda no la ve, no esta midiendo nada).
+    sondaMutar = false
 } = {}) {
     const conCola = !!(queue || ejecutarCola);
     const mkCell = (spec) => cell(imgSuffix ? Object.assign({ imgSuffix: true }, spec) : spec);
@@ -241,7 +269,7 @@ async function run({
     // igual que los escribiría saveSettings(): JSON en una sola clave.
     const store = new Map();
     store.set('ig-bulk-settings', JSON.stringify({
-        hideEntered, showIgnored: false, balanceMin: false, queueMin: false,
+        hideEntered, showIgnored, balanceMin: false, queueMin: false,
         rememberFilters, loadAllPages,
         filters: { sort: 'expiry', order: 'asc', level: String(level), search: '', page: savedPage }
     }));
@@ -249,6 +277,8 @@ async function run({
     if (queue) store.set('ig-st-queue', JSON.stringify(queue));
     // Misma clave y mismo formato que saveEnteredGids(): JSON en una sola clave.
     if (enteredGids) store.set('ig-bulk-entered-gids', JSON.stringify(enteredGids));
+    if (ignoredGids) store.set('ig-bulk-ignored-gids', JSON.stringify(ignoredGids));
+    if (ignoredGames) store.set('ig-bulk-ignored-games', JSON.stringify(ignoredGames));
     w.GM_getValue = (k, d) => (store.has(k) ? store.get(k) : d);
     w.GM_setValue = (k, v) => store.set(k, v);
     w.unsafeWindow = w;
@@ -401,6 +431,53 @@ async function run({
         await new Promise(r => setTimeout(r, 400));
     }
 
+    // Clics en controles de tarjeta. Celda buscada por gid y SOLO en el listado:
+    // el carrusel repite giveaways y su copia no es la que se mira.
+    const clics = [];
+    const scopeSel = '#ajax-contents-container .page-contents-list';
+    for (const p of pulsar) {
+        const col = Array.from(w.document.querySelectorAll(scopeSel + ' .items-list-col')).find(c => {
+            const a = c.querySelector('.items-list-item-title a');
+            const mm = a && (a.getAttribute('href') || '').match(/(\d+)\/?$/);
+            return mm && mm[1] === String(p.gid);
+        });
+        // Sin gid, el control es del widget y se busca en el documento.
+        const el = p.gid == null ? w.document.querySelector(p.sel) : (col && col.querySelector(p.sel));
+        clics.push({ gid: p.gid, sel: p.sel, encontrado: !!el });
+        if (!el) continue;
+        el.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+        await new Promise(r => setTimeout(r, 200));
+        if (confirmar != null) {
+            const b = w.document.querySelector(confirmar ? '.ig-confirm-ok' : '.ig-confirm-cancel');
+            if (b) { b.dispatchEvent(new w.MouseEvent('click', { bubbles: true })); await new Promise(r => setTimeout(r, 200)); }
+        }
+        await new Promise(r => setTimeout(r, 400));   // > debounce del observador
+    }
+
+    // Mutaciones con la pagina en reposo: ninguna deberia salir del propio
+    // script. Si las pasadas del observador reescriben algo aunque no cambie,
+    // cada una despierta a la siguiente y esto no baja de cero.
+    // Muestra de que se movio, para que un fallo diga DONDE y no solo cuanto.
+    const muestraMutaciones = [];
+    const porNodo = {};
+    const mutacionesEnReposo = await new Promise(resolve => {
+        let n = 0;
+        const desc = (el) => el && el.nodeType === 1
+            ? el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).join('.') : '')
+            : (el ? '#text' : '?');
+        const mo = new w.MutationObserver(recs => {
+            n += recs.length;
+            recs.forEach(r => {
+                const k = r.type + ' ' + desc(r.target);
+                porNodo[k] = (porNodo[k] || 0) + 1;
+                if (muestraMutaciones.length < 12) muestraMutaciones.push(k);
+            });
+        });
+        mo.observe(w.document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+        if (sondaMutar) setTimeout(() => w.document.body.appendChild(w.document.createElement('span')), 300);
+        setTimeout(() => { mo.disconnect(); resolve(n); }, 1500);
+    });
+
     // Abre el modal de encolar pulsando el badge ⚠×N de una tarjeta, que es
     // como lo abre el usuario, y espera a que llegue la respuesta de la ficha.
     let modal = null;
@@ -551,6 +628,49 @@ async function run({
             return m ? m[1].trim() : null;
         })(),
         joins,
+        clics,
+        mutacionesEnReposo,
+        muestraMutaciones,
+        mutacionesPorNodo: porNodo,
+        // Estado de "ocultos por mi" por gid del listado: 'oculto' (celda
+        // escondida), 'atenuado' (visible con "Mostrar ocultos") o 'visible'.
+        // Con el texto y tooltip del ✕/↺ y si la celda lleva el 🚫 a la vista.
+        // Se lee la clase, no el estilo: jsdom no hace layout.
+        tarjetas: scope ? Object.fromEntries(Array.from(scope.querySelectorAll('.items-list-col')).map(c => {
+            const a = c.querySelector('.items-list-item-title a');
+            const mm = a && (a.getAttribute('href') || '').match(/(\d+)\/?$/);
+            const cruz = c.querySelector('.ig-ign-btn');
+            const juego = c.querySelector('.ig-ign-game-btn');
+            return [mm ? mm[1] : '?', {
+                estado: c.classList.contains('ig-ignored-hidden') ? 'oculto'
+                    : (c.classList.contains('ig-ignored-shown') ? 'atenuado' : 'visible'),
+                cruz: cruz ? cruz.textContent : null,
+                cruzTitle: cruz ? cruz.getAttribute('title') : null,
+                cruzLado: cruz ? (cruz.classList.contains('ig-ign-left') ? 'izq' : 'der') : null,
+                botonJuego: !!(juego && !juego.classList.contains('ig-ign-game-off')),
+                botonJuegoLado: juego ? (juego.classList.contains('ig-ign-left') ? 'izq' : 'der') : null
+            }];
+        })) : {},
+        almacen: {
+            gidsOcultos: (() => { try { return JSON.parse(store.get('ig-bulk-ignored-gids') || '{}'); } catch (_) { return null; } })(),
+            juegosOcultos: (() => { try { return JSON.parse(store.get('ig-bulk-ignored-games') || '{}'); } catch (_) { return null; } })()
+        },
+        widgetOcultos: (() => {
+            const b = w.document.querySelector('#ig-bw-clear-ignored');
+            const bj = w.document.querySelector('#ig-bw-clear-ignored-games');
+            const row = w.document.querySelector('#ig-bw-show-ignored-row');
+            return {
+                limpiar: b && b.style.display !== 'none' ? b.textContent : null,
+                limpiarJuegos: bj && bj.style.display !== 'none' ? bj.textContent : null,
+                casillaMostrar: !!(row && row.style.display !== 'none')
+            };
+        })(),
+        // Reglas de la hoja que apartan el ＋ y el ⚠×N de un giveaway atenuado.
+        reglaControlesEnOculto: (() => {
+            const st = w.document.getElementById('ig-bulk-styles');
+            const css = st ? st.textContent : '';
+            return /\.ig-ignored-shown \.ig-q-btn,\s*\.ig-ignored-shown \.ig-bulk-join-badge \{ display: none !important; \}/.test(css);
+        })(),
         modal,
         ejecucion,
         colaRestante: (() => {
