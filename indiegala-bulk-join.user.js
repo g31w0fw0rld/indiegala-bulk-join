@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Bulk Tools (giveaway ticket queue + store links)
 // @namespace    http://tampermonkey.net/
-// @version      1.12.0
+// @version      1.12.1
 // @description  Ticket queue for Indiegala giveaways. Entering is one click per giveaway and per ticket, and the moment your silver runs out the run dies and you start it again by hand. This queues them all instead —add, remove and reorder mid-run— and a ticket you cannot afford waits its turn rather than stopping everything. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban. More in "Learn more".
 // @icon         data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAIKADAAQAAAABAAAAIAAAAACshmLzAAADNUlEQVRYCcVXMWxTMRB1orS0tIkixAZD2UqndEFs+QjonEosLC3pwlKpEwNITEh06BSpDCxtmoUFKVlYkBA/G+pCWErHDrCBVCWgFAiEe9a3c/Z3WpP2i5Msn893vue7s79/SnjSl5nZAqmWqBWpBdRcFJKwSa1x8WC/5VKwZSlbYI/J8T2SrVEDgH8hAKgQkOpxRkMBkOMZMtymFlA7DYVkXCYgB65FnADIOUIN53mX0QiyQ7IBiIZtGwMQhRzOkyCAqPKFDQDRzutcIQF+kUdCA4hy/p4cnlXYh2FHOuZVTaSZ1lnmnC0bY7FBnWIZgZPynsplRb/dia0EQWZuVqRyOTn3+9Nn8YeaJ8l6yETKOOdOgoPJtVXRub+q5wFocmVZTJSXyHlWy8H09vZFt7Ipfr5+Y8gdA/ispmj3BWKQ+xhh8fyrusDO2neX5TwATW2sy53HDJjgx8u6+PbgEZM42XnUQMk5RULsMn35kp4GoOzzTcM5UvPr3a5sWpGY8YVbhi2fY3wJKSgygcEixJzOUyo4oO9P1sXRVk2rAOA0RWfs+jWK2JJPPRQBINArWAzPL/iJlQEghBdh5oRooFYA0rMYA34M+VoxHrtShEKznas59J7OpYk6BdzeyWfmrmp5j3JuEyKUe1Ez6kPpfL0ysFUy1XtHQBmg73fMO+E459zOxXsDQKUrGrt9U7GyR3H22219GpAiX/JOQW/vo14Td8G5O4u6DnAaOOGoCtIBnXQhIQIhFF3Er1/wvPCmN54apwL2SAWcjy8MInS0XXMtrWQhADTVyO5tY+yUV/jU44fiwoddKr4d2cBz5wDMU2evD98A0HBMSFF3a8dwqM45zzF2jSPKjymM4dzjKm6k6bvcIn20GCmHPBVwjluuW3nm/EJiHpeRh/MWfP/Pz7F8GfEX0VsKQRALQzKCkHZ/A0ujBhSViTlUgwR7+IAvSRpA9EbTE0ohgd74R9AA4IhANKhLEkTs3yDl2mH0PMfDMe+aH0Emwx5t0DB3AoBG9EwHiADjU1BItkbY+VpDASil6MWMB2RByTz7FumN/nNqO4keryWS4wkX2PPROKS+Sc379/wvBfE4KdAnimYAAAAASUVORK5CYII=
 // @match        https://www.indiegala.com/giveaways
@@ -51,7 +51,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.12.0';
+    const SCRIPT_VERSION = '1.12.1';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     // La advertencia de automatizacion solo aplica al modulo de giveaways. En la
     // tienda este script no automatiza nada —pone dos enlaces— y avisar ahi de un
@@ -130,6 +130,12 @@
             ignoreGameBtn: '🚫',
             ignoreGameBtnTooltip: 'Ocultar este juego: ninguno de sus giveaways, ni los de ahora ni los que salgan después. Se reconoce por el juego de Steam de la portada, o por el título si la tarjeta no la trae. Solo afecta a lo que ves. Reversible con ↺ o desde el widget.',
             ignoreGameDone: '🚫 Juego oculto: {title}. Sus giveaways no volverán a mostrarse.',
+            ignorePopTitle: 'Giveaway oculto',
+            ignorePopAsk: '¿Ocultar también los demás de «{title}»?',
+            ignorePopMore: 'Hay {n} más en esta página. También se ocultarán los que salgan después.',
+            ignorePopNone: 'No hay más en esta página, pero se ocultarán los que salgan después.',
+            ignorePopGameBtn: '🚫 Ocultar el juego',
+            ignorePopTooltip: 'Clic fuera o Esc para cerrar: el giveaway sigue oculto igual.',
             queueMoveUp: 'Subir — se intentará antes',
             queueMoveDown: 'Bajar — se intentará después',
             queueWaitsForBalance: 'Sin saldo ahora — queda en cola y se compra cuando tengas GalaSilver',
@@ -144,6 +150,9 @@
             queueDone: 'Listo. {ok} de {n} entradas exitosas.',
             queueDoneSkipped: 'Listo. {ok} de {n} exitosas · {w} sin saldo suficiente.',
             queueItemNoFunds: 'Sin saldo para este boleto — se salta hasta que tengas GalaSilver',
+            queueGotoHint: 'clic para ir a su tarjeta',
+            queueGotoMissing: 'Ese giveaway no está en lo que muestra ahora el listado: estará en otra página, fuera del filtro de nivel, o ya terminó.',
+            queueGotoHidden: 'Su tarjeta está oculta en el listado: la ocultaste tú o ya tienes boleto.',
             queueModalCount: 'Boletos en cola',
             // Compartido
             warningTitle: '⚠️ RIESGO DE BAN PERMANENTE',
@@ -272,6 +281,12 @@
             ignoreGameBtn: '🚫',
             ignoreGameBtnTooltip: 'Hide this game: none of its giveaways, neither the current ones nor any that come later. It is recognised by the Steam game on the cover, or by the title when the card has none. It only affects what you see. Reversible with ↺ or from the widget.',
             ignoreGameDone: '🚫 Game hidden: {title}. Its giveaways will not show up again.',
+            ignorePopTitle: 'Giveaway hidden',
+            ignorePopAsk: 'Hide the rest of “{title}” too?',
+            ignorePopMore: 'There are {n} more on this page. Any that come later will be hidden too.',
+            ignorePopNone: 'None more on this page, but any that come later will be hidden.',
+            ignorePopGameBtn: '🚫 Hide the game',
+            ignorePopTooltip: 'Click outside or press Esc to close: the giveaway stays hidden either way.',
             queueMoveUp: 'Move up — tried sooner',
             queueMoveDown: 'Move down — tried later',
             queueWaitsForBalance: 'No balance right now — it stays queued and is bought once you have GalaSilver',
@@ -286,6 +301,9 @@
             queueDone: 'Done. {ok} of {n} entries successful.',
             queueDoneSkipped: 'Done. {ok} of {n} successful · {w} lack balance.',
             queueItemNoFunds: 'Not enough balance for this ticket — skipped until you have GalaSilver',
+            queueGotoHint: 'click to go to its card',
+            queueGotoMissing: 'That giveaway is not in what the listing shows right now: it is on another page, outside the level filter, or it has ended.',
+            queueGotoHidden: 'Its card is hidden in the listing: you hid it, or you already hold a ticket.',
             queueModalCount: 'Tickets queued',
             // Shared
             warningTitle: '⚠️ PERMANENT BAN RISK',
@@ -402,6 +420,7 @@
                 '• Ritmo humanizado: 2.5–5 s entre boletos y pausa de 10–20 s cada 10, con temporizador en Web Worker para que no se estiren con la pestaña en segundo plano.',
                 '• Se detiene solo si el servidor protesta (ritmo, baneo, sin respuesta) y ofrece Continuar cuando la causa es recuperable. La cola sobrevive a las recargas.',
                 '• Al hacer clic en el título de una tarjeta se encola, en vez de abrir el giveaway.',
+                '• Un clic en una fila del panel de la cola te lleva a su tarjeta en el listado y la resalta. Si no está en la página, o la tienes oculta, te lo dice.',
                 '▸ Widget de GalaSilver',
                 '• Saldo en vivo leído de las respuestas del sitio, lo que queda descontando la cola, o cuánto falta para toda ella. También muestra tu GalaCredit.',
                 '• La cifra cambia de color según el saldo: amarillo mientras acumula, rojo al llegar al tope de 240 iS (ahí ya no te suma nada el tiempo que pase) y blanco en cero. El tooltip dice cuánto falta para el tope y el ritmo de acumulación que documenta Indiegala.',
@@ -419,6 +438,7 @@
                 '• "Cargar todas las páginas" trae a la que estás viendo el resto de las páginas del listado, con el orden y el filtro de nivel que tengas puestos. Las tarjetas llegan enteras, así que la cola, el ⚠×N y el ✕ funcionan igual en ellas. Con la casilla puesta se hace solo en cada carga de la página, y no carga nada mientras haya ruleta por girar, mientras corra la cola, ni sobre resultados de búsqueda —ahí Indiegala ya te los da todos de una vez—. Mientras está marcada, "Recordar filtros" deja de reaplicar la página guardada: con todas cargadas no significa nada. Cuando ya está todo dentro, los números de la paginación se pliegan —el total sigue a la vista—; si la carga se paró a medias, se quedan, que es cuando sirven.',
                 '• El botón ✕ de cada tarjeta oculta ese giveaway (solo en tu navegador), en la esquina opuesta al ＋ o al badge ⚠×N. "Mostrar ocultos por mí" los devuelve atenuados para sacarlos de la lista con ↺, y "Limpiar ocultos (N)" la vacía de golpe.',
                 '• La lista de ocultos se limpia sola: cada oculto se va cuando su giveaway termina, calculado con el "N days left" de la propia tarjeta. No hace falta vaciarla a mano para que no engorde.',
+                '• Al ocultar un giveaway con ✕ sale un aviso junto a él que ofrece ocultar también su juego entero, con cuántos más de ese juego hay en la página. Se cierra con un clic en cualquier otro sitio o con Esc, y el giveaway sigue oculto igual.',
                 '• En una tarjeta ocultada con ✕ (se ven con "Mostrar ocultos por mí"), el botón 🚫 oculta el juego entero: todos sus giveaways, los de ahora y los que salgan después, también los que traiga "Cargar todas las páginas". Ocupa el sitio del ＋ o del ⚠×N, que en un giveaway oculto no tienen sentido. El juego se reconoce por la portada de Steam y, si la tarjeta no la trae, por el título. Esta lista no caduca —un juego no termina como un giveaway—: se deshace con el ↺ de cualquiera de sus tarjetas o con "Limpiar juegos ocultos (N)", y los que ocultaste uno a uno con ✕ siguen ocultos.',
                 '▸ Fichas de la tienda',
                 '• En las fichas de producto (juegos, DLC y paquetes) añade dos botones bajo "Añadir al carrito": GG.deals busca el título en su catálogo, sin filtro de tienda ni de DRM, y PCGamingWiki busca compatibilidad y arreglos — sin el sufijo de edición y, en un DLC, por el juego base que la propia ficha declara, que es donde PCGamingWiki lo documenta. Los dos buscan por nombre, así que pueden no acertar; cada uno lo dice en su tooltip.',
@@ -447,6 +467,7 @@
                 '• Humanized pacing: 2.5–5 s between tickets and a 10–20 s pause every 10, on a Web Worker timer so they are not stretched when the tab is in the background.',
                 '• Stops on its own if the server pushes back (rate limit, ban, no answer) and offers Continue when the cause is recoverable. The queue survives reloads.',
                 '• Clicking a card title queues it instead of opening the giveaway.',
+                '• Clicking a row of the queue panel takes you to its card in the listing and highlights it. If it is not on the page, or you have it hidden, it tells you.',
                 '▸ GalaSilver widget',
                 '• Live balance read from the site\'s own responses, what is left after the queue, or how much you are missing for all of it. It shows your GalaCredit too.',
                 '• The figure changes colour with your balance: yellow while accruing, red at the 240 iS cap (where the time that passes adds nothing) and white at zero. The tooltip tells you how much is left to the cap and the accrual rate Indiegala documents.',
@@ -464,6 +485,7 @@
                 '• "Load every page" pulls the rest of the listing\'s pages into the one you are on, keeping the sort order and level filter you have set. The cards arrive whole, so the queue, the ⚠×N and the ✕ work the same on them. With the box ticked it happens on its own on every page load, and nothing is fetched while there is a wheel to spin, while the queue runs, or over search results — Indiegala already hands you all of those at once. While it is ticked, "Remember search filters" stops re-applying the saved page: with everything loaded it means nothing. Once everything is in, the pagination numbers fold away — the total stays visible —; if the load stopped halfway they stay, which is when they are useful.',
                 '• The ✕ button on each card hides that giveaway (in your browser only), in the corner opposite the ＋ or the ⚠×N badge. "Show the ones I hid" brings them back dimmed so you can take them off the list with ↺, and "Clear hidden (N)" empties it in one go.',
                 '• The hidden list cleans itself up: each entry drops off when its giveaway ends, worked out from the card\'s own "N days left". You never have to empty it by hand to keep it from growing.',
+                '• Hiding a giveaway with ✕ brings up a note next to it offering to hide its whole game too, with how many more of that game are on the page. It closes with a click anywhere else or with Esc, and the giveaway stays hidden either way.',
                 '• On a card hidden with ✕ (they show with "Show the ones I hid"), the 🚫 button hides the whole game: all of its giveaways, current and future, including the ones "Load every page" brings in. It takes the place of the ＋ or the ⚠×N, which make no sense on a hidden giveaway. The game is recognised by its Steam cover and, when the card has none, by its title. This list does not expire — a game does not end the way a giveaway does —: it is undone with the ↺ on any of its cards or with "Clear hidden games (N)", and the ones you hid one by one with ✕ stay hidden.',
                 '▸ Store product pages',
                 '• On product pages (games, DLC and packs) it adds two buttons under "Add to Cart": GG.deals searches the title in its catalogue, with no store or DRM filter, and PCGamingWiki searches for compatibility and fixes — without the edition suffix and, on a DLC, by the base game the page itself declares, which is where PCGamingWiki documents it. Both are name searches, so they can miss; each says so in its tooltip.',
@@ -1433,6 +1455,33 @@
             .${IGN_GAME_BTN_CLASS}.ig-ign-left { left: 6px; }
             .${IGN_GAME_BTN_CLASS}.ig-ign-right { right: 6px; }
             .${IGN_GAME_BTN_CLASS}.ig-ign-game-off { display: none; }
+            /* Aviso tras el ✕ (ver showIgnoreGamePopover). Por encima de las
+               tarjetas y de sus botones (z-index 51), por debajo del panel de
+               la cola y de los modales. */
+            #ig-ign-pop {
+                position: absolute;
+                z-index: 99990;
+                width: 260px; max-width: calc(100vw - 16px);
+                box-sizing: border-box;
+                padding: 10px 12px;
+                background: #1f1f1f; color: #fff;
+                border: 2px solid #c62828;
+                border-radius: 8px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+                font-family: sans-serif; font-size: 12px; line-height: 1.35;
+            }
+            #ig-ign-pop .ig-ign-pop-title { font-weight: bold; color: #ff8a80; margin-bottom: 4px; }
+            #ig-ign-pop .ig-ign-pop-ask { overflow-wrap: anywhere; }
+            #ig-ign-pop .ig-ign-pop-more { color: #bbb; margin-top: 4px; }
+            #ig-ign-pop .ig-ign-pop-game {
+                display: block; width: 100%;
+                margin-top: 8px; padding: 7px 8px;
+                border: none; border-radius: 4px;
+                background: #c62828; color: #fff;
+                font-size: 12px; font-weight: bold;
+                cursor: pointer;
+            }
+            #ig-ign-pop .ig-ign-pop-game:hover { background: #e53935; }
             /* En un giveaway oculto, encolarlo seria contradecirse: el ＋ y el
                ⚠×N se apartan y dejan su esquina al 🚫. Solo se ven en ese estado
                (con "Mostrar ocultos"); sin el, la celda entera ya esta oculta. */
@@ -1488,6 +1537,17 @@
                 color: #fff;
             }
             #${PANEL_ID} .ig-q-it-price { color: #ff7da6; font-weight: bold; }
+            #${PANEL_ID} .ig-q-li { cursor: pointer; }
+            #${PANEL_ID} .ig-q-li:hover .ig-q-it-title { text-decoration: underline; }
+            /* Destello en la tarjeta a la que se llega desde la cola. */
+            @keyframes ig-q-goto-pulse {
+                0%, 100% { box-shadow: 0 0 0 3px #ff7da6, 0 0 0 0 rgba(255,125,166,0.6); }
+                50% { box-shadow: 0 0 0 3px #ff7da6, 0 0 0 10px rgba(255,125,166,0); }
+            }
+            .items-list-item.ig-q-goto-flash {
+                animation: ig-q-goto-pulse 0.8s ease-out 3;
+                border-radius: 6px;
+            }
             #${PANEL_ID} .ig-q-it-count {
                 color: #fff;
                 background: linear-gradient(135deg, #6a1b9a 0%, #ad1457 100%);
@@ -2805,8 +2865,8 @@
                 ? `<span class="ig-q-it-wait" title="${escapeHtml(T.queueItemNoFunds)}">⏳</span>`
                 : '';
             return `
-                <li class="${isActive ? 'ig-q-li-active' : ''}${noFunds ? ' ig-q-li-nofunds' : ''}">
-                    <span class="ig-q-it-title" title="${escapeHtml(q.title)} — ${escapeHtml(q.timeLeft || '')}${noFunds ? ' · ' + escapeHtml(T.queueItemNoFunds) : ''}">${escapeHtml(q.title)}</span>
+                <li class="ig-q-li${isActive ? ' ig-q-li-active' : ''}${noFunds ? ' ig-q-li-nofunds' : ''}" data-gid="${escapeHtml(q.gid)}">
+                    <span class="ig-q-it-title" title="${escapeHtml(q.title)} — ${escapeHtml(q.timeLeft || '')}${noFunds ? ' · ' + escapeHtml(T.queueItemNoFunds) : ''} · ${escapeHtml(T.queueGotoHint)}">${escapeHtml(q.title)}</span>
                     ${countLabel}
                     ${waitLabel}
                     <span class="ig-q-it-price">${totalForRow} iS</span>
@@ -2855,12 +2915,47 @@
                 removeFromQueue(b.dataset.gid);
             });
         });
+        // Clic en la fila (no en sus botones, que paran la propagacion): ir a
+        // la tarjeta del giveaway en el listado.
+        panel.querySelectorAll('.ig-q-li').forEach(li => {
+            li.addEventListener('click', () => gotoListingItem(li.dataset.gid));
+        });
         panel.querySelector('#ig-q-clear').addEventListener('click', async () => {
             const ok = await showConfirm(T.queueClearConfirm);
             if (ok) clearQueue();
         });
         panel.querySelector('#ig-q-exec').addEventListener('click', executeQueue);
         applyQueueMinState(panel);
+    }
+
+    // Lleva a la tarjeta de un giveaway de la cola: scroll hasta ella, foco en
+    // su titulo (asi el teclado sigue desde ahi) y un destello para encontrarla
+    // entre las de alrededor. Se busca solo en el listado: el carrusel de arriba
+    // repite giveaways y llevar ahi no serviria (ver LISTING_SCOPE).
+    //
+    // Si no se ve, se dice por que en vez de no hacer nada: una cola puede tener
+    // giveaways de otra pagina, o de una tarjeta que el propio script esconde.
+    const GOTO_FLASH_CLASS = 'ig-q-goto-flash';
+    function gotoListingItem(gid) {
+        if (!gid) return;
+        const scope = document.querySelector(LISTING_SCOPE);
+        const item = scope && Array.from(scope.querySelectorAll('.items-list-item'))
+            .find(it => getItemGid(it) === String(gid));
+        if (!item) { showToast(T.queueGotoMissing, 'info'); return; }
+        const cell = item.closest('.items-list-col') || item;
+        if (cell.classList.contains('ig-ignored-hidden') || cell.classList.contains('ig-entered-hidden')) {
+            showToast(T.queueGotoHidden, 'info');
+            return;
+        }
+        if (typeof cell.scrollIntoView === 'function') cell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const a = item.querySelector('.items-list-item-title a');
+        if (a) { try { a.focus({ preventScroll: true }); } catch (_) { a.focus(); } }
+        // Reiniciar la animacion si ya estaba puesta (dos clics seguidos).
+        item.classList.remove(GOTO_FLASH_CLASS);
+        void item.offsetWidth;
+        item.classList.add(GOTO_FLASH_CLASS);
+        clearTimeout(item._igGotoT);
+        item._igGotoT = setTimeout(() => item.classList.remove(GOTO_FLASH_CLASS), 2400);
     }
 
     // Refleja en el DOM el estado minimizado del panel de cola: colapsa todo
@@ -4995,11 +5090,20 @@
                     // el nodo puede haberse reciclado con otro giveaway dentro.
                     const it = btn.closest('.items-list-item');
                     const k = getItemGameKey(it);
+                    // Solo al ocultar se ofrece el juego entero. La posicion se
+                    // toma ANTES de applyIgnored: despues la celda puede estar en
+                    // display:none y su rectangulo vale cero.
+                    let pop = null;
                     if (isGameIgnored(k)) removeIgnoredGame(k);
                     else if (isGidIgnored(g)) removeIgnoredGid(g);
-                    else addIgnoredGid(g, getItemExpiresAt(it));
+                    else {
+                        addIgnoredGid(g, getItemExpiresAt(it));
+                        if (k) pop = { k, g, title: getItemTitle(it), rect: btn.getBoundingClientRect(), left: btn.classList.contains('ig-ign-left') };
+                    }
                     applyIgnored();
                     refreshIgnoredWidget();
+                    if (pop) showIgnoreGamePopover(pop);
+                    else closeIgnoreGamePopover();
                 });
                 host.appendChild(btn);
             }
@@ -5034,14 +5138,7 @@
                     e.preventDefault();
                     e.stopPropagation();
                     const it = gameBtn.closest('.items-list-item');
-                    const k = getItemGameKey(it);
-                    if (!k) return;
-                    const a = it && it.querySelector('.items-list-item-title a');
-                    const title = a ? (a.textContent || '').trim() : '';
-                    addIgnoredGame(k, title);
-                    applyIgnored();
-                    refreshIgnoredWidget();
-                    showToast(fmt(T.ignoreGameDone, { title: title || k }), 'success');
+                    ignoreGame(getItemGameKey(it), getItemTitle(it));
                 });
                 host.appendChild(gameBtn);
             }
@@ -5056,6 +5153,102 @@
             cell.classList.toggle('ig-ignored-hidden', ignored && !show);
             cell.classList.toggle('ig-ignored-shown', ignored && show);
         });
+    }
+
+    function getItemTitle(item) {
+        const a = item && item.querySelector('.items-list-item-title a');
+        return a ? (a.textContent || '').trim() : '';
+    }
+
+    // Lo que hace el 🚫, desde la tarjeta o desde el aviso que sale tras el ✕.
+    function ignoreGame(key, title) {
+        if (!key) return;
+        addIgnoredGame(key, title);
+        applyIgnored();
+        refreshIgnoredWidget();
+        showToast(fmt(T.ignoreGameDone, { title: title || key }), 'success');
+    }
+
+    // -------- Aviso tras el ✕: "¿ocultar tambien el juego?" --------
+    // El 🚫 de la tarjeta solo se ve con "Mostrar ocultos por mi", asi que sin
+    // este aviso ocultar un juego entero pedia tres pasos: ✕, marcar la casilla
+    // y buscar la tarjeta atenuada. Aqui se ofrece justo cuando se acaba de
+    // descartar uno, que es cuando la pregunta tiene sentido.
+    //
+    // No es un modal: no bloquea nada ni pide respuesta. Se cierra con un clic
+    // en cualquier otro sitio (que ademas hace lo suyo, no se lo come) o con Esc,
+    // y cerrarlo deja el ✕ hecho, que es lo que el usuario pidio.
+    //
+    // Va en coordenadas del DOCUMENTO, no fixed: la tarjeta de la que sale ya
+    // no esta, pero el aviso tiene que quedarse donde estaba al hacer scroll.
+    const IGN_POP_ID = 'ig-ign-pop';
+    let ignPopOff = null;
+    function closeIgnoreGamePopover() {
+        if (ignPopOff) { ignPopOff(); ignPopOff = null; }
+        const el = document.getElementById(IGN_POP_ID);
+        if (el) el.remove();
+    }
+    function showIgnoreGamePopover({ k, g, title, rect, left: alignLeft }) {
+        closeIgnoreGamePopover();
+        if (!k || isGameIgnored(k)) return;
+        // Los demas del mismo juego que aun se ven. Por gid distinto y dentro
+        // del listado: el carrusel repite giveaways del listado (ver
+        // LISTING_SCOPE) y contaria el mismo varias veces.
+        const scope = document.querySelector(LISTING_SCOPE) || document;
+        const otros = new Set();
+        scope.querySelectorAll('.items-list-item').forEach(it => {
+            const gid = getItemGid(it);
+            if (!gid || gid === g || isGidIgnored(gid)) return;
+            if (getItemGameKey(it) === k) otros.add(gid);
+        });
+
+        const pop = document.createElement('div');
+        pop.id = IGN_POP_ID;
+        pop.setAttribute('role', 'dialog');
+        pop.title = T.ignorePopTooltip;
+        const h = document.createElement('div');
+        h.className = 'ig-ign-pop-title';
+        h.textContent = T.ignorePopTitle;
+        const ask = document.createElement('div');
+        ask.className = 'ig-ign-pop-ask';
+        ask.textContent = fmt(T.ignorePopAsk, { title: title || k });
+        const more = document.createElement('div');
+        more.className = 'ig-ign-pop-more';
+        more.textContent = otros.size ? fmt(T.ignorePopMore, { n: otros.size }) : T.ignorePopNone;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ig-ign-pop-game';
+        btn.textContent = T.ignorePopGameBtn;
+        btn.title = T.ignoreGameBtnTooltip;
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            closeIgnoreGamePopover();
+            ignoreGame(k, title);
+        });
+        pop.append(h, ask, more, btn);
+        document.body.appendChild(pop);
+
+        // Bajo el ✕ que se pulso, alineado por su lado y sin salirse de la
+        // ventana (en movil la tarjeta ocupa casi todo el ancho).
+        const W = pop.offsetWidth || 260;
+        const vw = document.documentElement.clientWidth || window.innerWidth || 0;
+        let left = alignLeft ? rect.left : rect.right - W;
+        if (vw) left = Math.min(left, vw - W - 8);
+        left = Math.max(8, left);
+        pop.style.left = (left + window.scrollX) + 'px';
+        pop.style.top = (rect.bottom + 6 + window.scrollY) + 'px';
+
+        // Clic fuera: en captura, para enterarse aunque el sitio pare la
+        // propagacion, y sin preventDefault, para que ese clic haga lo suyo.
+        const onDown = (e) => { if (!pop.contains(e.target)) closeIgnoreGamePopover(); };
+        const onKey = (e) => { if (e.key === 'Escape') closeIgnoreGamePopover(); };
+        document.addEventListener('click', onDown, true);
+        document.addEventListener('keydown', onKey, true);
+        ignPopOff = () => {
+            document.removeEventListener('click', onDown, true);
+            document.removeEventListener('keydown', onKey, true);
+        };
     }
 
     // Escribe una propiedad solo si su valor cambia. Para todo lo que se repinta

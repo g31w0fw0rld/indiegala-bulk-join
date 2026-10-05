@@ -238,7 +238,7 @@ async function run({
     // Clics en controles de tarjeta, en orden, tras asentarse la pagina:
     // [{ gid, sel }]. Se pulsa el primero que case DENTRO de la celda del gid
     // en el listado, que es lo que pulsaria el usuario; sin gid, en el documento
-    // (los botones del widget).
+    // (los botones del widget). `{ tecla: 'Escape' }` pulsa una tecla en vez.
     pulsar = [],
     // Confirma (true) o cancela (false) el showConfirm que salga tras un clic.
     confirmar = null,
@@ -339,6 +339,15 @@ async function run({
     // Sin esta captura, volver a añadirla no rompería ninguna prueba.
     const notificaciones = [];
     w.GM_notification = (o) => { notificaciones.push(o); };
+    // jsdom no implementa scrollIntoView (no hace layout): se registra a donde
+    // se pidio ir, por el gid de la tarjeta, que es lo que se afirma.
+    const scrolls = [];
+    const gidDe = (el) => {
+        const a = el && el.querySelector && el.querySelector('.items-list-item-title a');
+        const mm = a && (a.getAttribute('href') || '').match(/(\d+)\/?$/);
+        return mm ? mm[1] : '?';
+    };
+    w.Element.prototype.scrollIntoView = function () { scrolls.push(gidDe(this)); };
     // El revelador de imagenes del sitio, solo cuando el test lo pide: asi el
     // caso normal ejerce el RESPALDO del script (que es el que tiene que
     // funcionar si el sitio le cambia el nombre) y este caso comprueba que,
@@ -436,6 +445,12 @@ async function run({
     const clics = [];
     const scopeSel = '#ajax-contents-container .page-contents-list';
     for (const p of pulsar) {
+        if (p.tecla) {
+            w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: p.tecla, bubbles: true }));
+            clics.push({ tecla: p.tecla });
+            await new Promise(r => setTimeout(r, 200));
+            continue;
+        }
         const col = Array.from(w.document.querySelectorAll(scopeSel + ' .items-list-col')).find(c => {
             const a = c.querySelector('.items-list-item-title a');
             const mm = a && (a.getAttribute('href') || '').match(/(\d+)\/?$/);
@@ -671,6 +686,22 @@ async function run({
             const css = st ? st.textContent : '';
             return /\.ig-ignored-shown \.ig-q-btn,\s*\.ig-ignored-shown \.ig-bulk-join-badge \{ display: none !important; \}/.test(css);
         })(),
+        // Aviso que sale tras el ✕ ("¿ocultar tambien el juego?"), o null.
+        avisoOcultar: (() => {
+            const e = w.document.getElementById('ig-ign-pop');
+            return e ? { texto: (e.textContent || '').trim(), boton: !!e.querySelector('.ig-ign-pop-game') } : null;
+        })(),
+        // Ir a la tarjeta desde la cola: a donde se hizo scroll, que tarjeta
+        // tiene el foco y cual lleva el destello.
+        irA: {
+            scrolls,
+            foco: (() => {
+                const el = w.document.activeElement;
+                const it = el && el.closest && el.closest('.items-list-item');
+                return it ? gidDe(it) : null;
+            })(),
+            destello: scope ? Array.from(scope.querySelectorAll('.items-list-item.ig-q-goto-flash')).map(gidDe) : []
+        },
         modal,
         ejecucion,
         colaRestante: (() => {

@@ -60,6 +60,7 @@ Userscript that adds a unified ticket-purchase queue and utilities to Indiegala 
 - **Humanized pacing:** 2.5–5 s between tickets and a 10–20 s pause every 10, on a **Web Worker timer** so those pauses are not stretched when the tab sits in the background.
 - Stops on its own when the server pushes back (rate limit, ban, no answer) and offers **Continue** when the cause is recoverable. The queue survives reloads.
 - Clicking a card **title** queues it instead of opening the giveaway, so a stray click does not navigate away.
+- Clicking a **row of the queue panel** takes you to that giveaway's card in the listing: it scrolls there, puts the focus on it and makes it flash for a moment. If the card is not in what the listing shows (another page, another level filter, or it has ended) or you have it hidden, it tells you instead of doing nothing.
 - The panel lives on the `/giveaways` listing: it hides on other pages but the queue is kept. Panel and widget can both be minimized, and they remember.
 
 **GalaSilver widget**
@@ -82,6 +83,7 @@ Userscript that adds a unified ticket-purchase queue and utilities to Indiegala 
 - **Hide giveaways you already entered** (remembered across reloads).
 - **Hide a giveaway by hand:** the **✕** on each card (opposite corner to that card's own control) hides it, in your browser only. **"Show the ones I hid"** brings them back dimmed so you can restore one with **↺**, and **"Clear hidden (N)"** empties the whole list.
 - **The hidden list cleans itself up.** Each entry drops off when its giveaway ends — worked out from the card's own "N days left" — so you never have to empty it by hand to keep it from growing.
+- **Right after the ✕**, a note pops up next to where the card was, offering to **hide its whole game** too and saying how many more of that game are on the page. It is the same as the 🚫 below, without having to tick "Show the ones I hid" and find the dimmed card. It is not a dialog: a click anywhere else or Esc closes it, and the giveaway stays hidden either way.
 - **Hide a whole game:** on a card you hid with **✕**, the **🚫** — in the corner where the ＋ or the ⚠×N was, since queueing a hidden giveaway makes no sense — hides every giveaway of that game, the current ones and any that come later, including the ones "Load every page" brings in. The game is recognised by its Steam cover (the appid), or by its title when the card has none. This list does not expire, because a game does not end the way a giveaway does: undo it with the **↺** on any of its cards or with **"Clear hidden games (N)"**. The giveaways you hid one by one with ✕ stay hidden either way.
 - **Script language:** Spanish, English or Auto.
 - **"Learn more"** button with a summary inside the page.
@@ -116,6 +118,7 @@ Userscript that adds a unified ticket-purchase queue and utilities to Indiegala 
 - **Ritmo humanizado:** 2.5–5 s entre boletos y una pausa de 10–20 s cada 10, sobre un **temporizador en Web Worker** para que esas pausas no se estiren con la pestaña en segundo plano.
 - Se detiene solo cuando el servidor protesta (límite de ritmo, baneo, sin respuesta) y ofrece **Continuar** si la causa es recuperable. La cola sobrevive a las recargas.
 - Al hacer clic en el **título** de una tarjeta se encola en vez de abrir el giveaway, para que un clic despistado no te saque de la página.
+- Un clic en una **fila del panel de la cola** te lleva a la tarjeta de ese giveaway en el listado: hace scroll hasta ella, le pone el foco y la hace destellar un momento. Si la tarjeta no está en lo que muestra el listado (otra página, otro filtro de nivel, o ya terminó) o la tienes oculta, te lo dice en vez de no hacer nada.
 - El panel vive en el listado de `/giveaways`: se oculta en otras páginas pero la cola se conserva. Panel y widget se pueden minimizar, y lo recuerdan.
 
 **Widget de GalaSilver**
@@ -138,6 +141,7 @@ Userscript that adds a unified ticket-purchase queue and utilities to Indiegala 
 - **Ocultar los giveaways en los que ya tienes boleto** (se recuerda al recargar).
 - **Ocultar un giveaway a mano:** la **✕** de cada tarjeta (en la esquina opuesta al control propio de esa tarjeta) lo oculta, solo en tu navegador. **"Mostrar ocultos por mí"** los devuelve atenuados para restaurar uno con **↺**, y **"Limpiar ocultos (N)"** vacía la lista entera.
 - **La lista de ocultos se limpia sola.** Cada oculto se va cuando termina su giveaway —calculado con el "N days left" de la propia tarjeta—, así que no hace falta vaciarla a mano para que no engorde.
+- **Justo después del ✕** sale un aviso donde estaba la tarjeta que ofrece **ocultar también su juego entero** y dice cuántos más de ese juego hay en la página. Es lo mismo que el 🚫 de abajo, sin tener que marcar "Mostrar ocultos por mí" y buscar la tarjeta atenuada. No es un diálogo: un clic en cualquier otro sitio o Esc lo cierra, y el giveaway sigue oculto igual.
 - **Ocultar un juego entero:** en una tarjeta que ocultaste con **✕**, el **🚫** —en la esquina donde estaba el ＋ o el ⚠×N, porque encolar un giveaway oculto no tiene sentido— oculta todos los giveaways de ese juego, los de ahora y los que salgan después, también los que traiga "Cargar todas las páginas". El juego se reconoce por su portada de Steam (el appid) o, si la tarjeta no la trae, por el título. Esta lista no caduca, porque un juego no termina como un giveaway: se deshace con el **↺** de cualquiera de sus tarjetas o con **"Limpiar juegos ocultos (N)"**. Los que ocultaste uno a uno con ✕ siguen ocultos en cualquier caso.
 - **Idioma del script:** español, inglés o Auto.
 - Botón **"Saber más"** con un resumen dentro de la página.
