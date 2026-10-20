@@ -208,6 +208,14 @@ async function run({
     ejecutarCola = false,
     // Respuestas de /giveaways/join, en orden. Por defecto, 'ok'.
     joinResponses = null,
+    // gids cuya caja de error (.items-list-item-error) se deja A LA VISTA,
+    // como la deja el sitio ~5,8 s tras un join fallido. jsdom no hace layout
+    // y offsetWidth vale siempre 0, asi que se le da un ancho a mano: sin eso
+    // isErrorVisible no veria nunca nada y el caso no se podria ejercer.
+    errorVisibleEn = [],
+    // Cuanto se deja correr la cola tras confirmar. Entre join y join hay una
+    // pausa de 2,5-5 s, asi que con mas de un item 4 s no bastan.
+    esperaCola = 4000,
     // Saldo que publica la cabecera.
     saldo = 10,
     // Trigger de ficha de detalle inyectado en el DOM (ver cardJoinHtml).
@@ -401,6 +409,15 @@ async function run({
         return { ok: true, status: 200, json: async () => body };
     };
 
+    errorVisibleEn.map(String).forEach(g => {
+        const a = w.document.querySelector(`.items-list-item-title a[href$="/${g}"]`);
+        const box = a && a.closest('.items-list-item').querySelector('.items-list-item-error');
+        if (!box) return;
+        box.classList.remove('display-none');
+        Object.defineProperty(box, 'offsetWidth', { configurable: true, get: () => 200 });
+        Object.defineProperty(box, 'offsetHeight', { configurable: true, get: () => 40 });
+    });
+
     const code = fs.readFileSync(SCRIPT_PATH, 'utf8');
     w.eval(code);
 
@@ -539,7 +556,7 @@ async function run({
                 ejecucion = { error: 'no salio el modal de confirmacion' };
             } else {
                 ok.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-                await new Promise(r => setTimeout(r, 4000));
+                await new Promise(r => setTimeout(r, esperaCola));
                 const st = w.document.querySelector('#ig-prog-status');
                 ejecucion = { estado: st ? (st.textContent || '').trim() : null };
             }
@@ -659,6 +676,9 @@ async function run({
             return [mm ? mm[1] : '?', {
                 estado: c.classList.contains('ig-ignored-hidden') ? 'oculto'
                     : (c.classList.contains('ig-ignored-shown') ? 'atenuado' : 'visible'),
+                // Categoria aparte (e260): se lee por separado porque convive
+                // con las otras dos y "Mostrar ocultos" no la toca.
+                noDisponible: c.classList.contains('ig-unavailable-hidden'),
                 cruz: cruz ? cruz.textContent : null,
                 cruzTitle: cruz ? cruz.getAttribute('title') : null,
                 cruzLado: cruz ? (cruz.classList.contains('ig-ign-left') ? 'izq' : 'der') : null,
@@ -677,7 +697,11 @@ async function run({
             return {
                 limpiar: b && b.style.display !== 'none' ? b.textContent : null,
                 limpiarJuegos: bj && bj.style.display !== 'none' ? bj.textContent : null,
-                casillaMostrar: !!(row && row.style.display !== 'none')
+                casillaMostrar: !!(row && row.style.display !== 'none'),
+                noDisponibles: (() => {
+                    const u = w.document.querySelector('#ig-bw-unavailable');
+                    return u && u.style.display !== 'none' ? u.textContent : null;
+                })()
             };
         })(),
         // Reglas de la hoja que apartan el ＋ y el ⚠×N de un giveaway atenuado.

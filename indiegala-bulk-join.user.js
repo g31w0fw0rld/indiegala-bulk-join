@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Indiegala Bulk Tools (giveaway ticket queue + store links)
 // @namespace    http://tampermonkey.net/
-// @version      1.12.1
+// @version      1.12.2
 // @description  Ticket queue for Indiegala giveaways. Entering is one click per giveaway and per ticket, and the moment your silver runs out the run dies and you start it again by hand. This queues them all instead —add, remove and reorder mid-run— and a ticket you cannot afford waits its turn rather than stopping everything. USE AT YOUR OWN RISK: automating purchases violates Indiegala's policy and may cause a permanent ban. More in "Learn more".
 // @icon         data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAIKADAAQAAAABAAAAIAAAAACshmLzAAADNUlEQVRYCcVXMWxTMRB1orS0tIkixAZD2UqndEFs+QjonEosLC3pwlKpEwNITEh06BSpDCxtmoUFKVlYkBA/G+pCWErHDrCBVCWgFAiEe9a3c/Z3WpP2i5Msn893vue7s79/SnjSl5nZAqmWqBWpBdRcFJKwSa1x8WC/5VKwZSlbYI/J8T2SrVEDgH8hAKgQkOpxRkMBkOMZMtymFlA7DYVkXCYgB65FnADIOUIN53mX0QiyQ7IBiIZtGwMQhRzOkyCAqPKFDQDRzutcIQF+kUdCA4hy/p4cnlXYh2FHOuZVTaSZ1lnmnC0bY7FBnWIZgZPynsplRb/dia0EQWZuVqRyOTn3+9Nn8YeaJ8l6yETKOOdOgoPJtVXRub+q5wFocmVZTJSXyHlWy8H09vZFt7Ipfr5+Y8gdA/ispmj3BWKQ+xhh8fyrusDO2neX5TwATW2sy53HDJjgx8u6+PbgEZM42XnUQMk5RULsMn35kp4GoOzzTcM5UvPr3a5sWpGY8YVbhi2fY3wJKSgygcEixJzOUyo4oO9P1sXRVk2rAOA0RWfs+jWK2JJPPRQBINArWAzPL/iJlQEghBdh5oRooFYA0rMYA34M+VoxHrtShEKznas59J7OpYk6BdzeyWfmrmp5j3JuEyKUe1Ez6kPpfL0ysFUy1XtHQBmg73fMO+E459zOxXsDQKUrGrt9U7GyR3H22219GpAiX/JOQW/vo14Td8G5O4u6DnAaOOGoCtIBnXQhIQIhFF3Er1/wvPCmN54apwL2SAWcjy8MInS0XXMtrWQhADTVyO5tY+yUV/jU44fiwoddKr4d2cBz5wDMU2evD98A0HBMSFF3a8dwqM45zzF2jSPKjymM4dzjKm6k6bvcIn20GCmHPBVwjluuW3nm/EJiHpeRh/MWfP/Pz7F8GfEX0VsKQRALQzKCkHZ/A0ujBhSViTlUgwR7+IAvSRpA9EbTE0ohgd74R9AA4IhANKhLEkTs3yDl2mH0PMfDMe+aH0Emwx5t0DB3AoBG9EwHiADjU1BItkbY+VpDASil6MWMB2RByTz7FumN/nNqO4keryWS4wkX2PPROKS+Sc379/wvBfE4KdAnimYAAAAASUVORK5CYII=
 // @match        https://www.indiegala.com/giveaways
@@ -51,7 +51,7 @@
 (function () {
     'use strict';
 
-    const SCRIPT_VERSION = '1.12.1';
+    const SCRIPT_VERSION = '1.12.2';
     console.log('[IG-BulkTools] cargado. Version:', SCRIPT_VERSION);
     // La advertencia de automatizacion solo aplica al modulo de giveaways. En la
     // tienda este script no automatiza nada —pone dos enlaces— y avisar ahi de un
@@ -149,10 +149,13 @@
             queueProgressItem: '{title} ({i}/{n})',
             queueDone: 'Listo. {ok} de {n} entradas exitosas.',
             queueDoneSkipped: 'Listo. {ok} de {n} exitosas · {w} sin saldo suficiente.',
+            queueDoneUnavailable: ' No disponibles, ocultos hasta recargar: {u}.',
             queueItemNoFunds: 'Sin saldo para este boleto — se salta hasta que tengas GalaSilver',
             queueGotoHint: 'clic para ir a su tarjeta',
             queueGotoMissing: 'Ese giveaway no está en lo que muestra ahora el listado: estará en otra página, fuera del filtro de nivel, o ya terminó.',
             queueGotoHidden: 'Su tarjeta está oculta en el listado: la ocultaste tú o ya tienes boleto.',
+            widgetUnavailable: '⛔ No disponibles: {n}',
+            widgetUnavailableTooltip: 'Giveaways que el servidor rechazó durante la cola con el código [e260], que es el de un sorteo que ya no está disponible. La cola los saca y sigue con el siguiente, y su tarjeta se oculta. No hay forma de devolverlos porque ya no se puede entrar en ellos; la lista se vacía sola al recargar la página.',
             queueModalCount: 'Boletos en cola',
             // Compartido
             warningTitle: '⚠️ RIESGO DE BAN PERMANENTE',
@@ -300,10 +303,13 @@
             queueProgressItem: '{title} ({i}/{n})',
             queueDone: 'Done. {ok} of {n} entries successful.',
             queueDoneSkipped: 'Done. {ok} of {n} successful · {w} lack balance.',
+            queueDoneUnavailable: ' Unavailable, hidden until reload: {u}.',
             queueItemNoFunds: 'Not enough balance for this ticket — skipped until you have GalaSilver',
             queueGotoHint: 'click to go to its card',
             queueGotoMissing: 'That giveaway is not in what the listing shows right now: it is on another page, outside the level filter, or it has ended.',
             queueGotoHidden: 'Its card is hidden in the listing: you hid it, or you already hold a ticket.',
+            widgetUnavailable: '⛔ Unavailable: {n}',
+            widgetUnavailableTooltip: 'Giveaways the server turned down during the queue with code [e260], which is the one for a giveaway that is no longer available. The queue drops them and moves on to the next one, and their card is hidden. There is no way to bring them back, since they can no longer be entered; the list empties itself when the page reloads.',
             queueModalCount: 'Tickets queued',
             // Shared
             warningTitle: '⚠️ PERMANENT BAN RISK',
@@ -419,6 +425,7 @@
                 '• Ese diálogo te dice además cuántos boletos YA tienes comprados de ese giveaway, que es el dato con el que se decide si comprar más. El listado no lo publica —lo suyo es «sold», el total de todo el mundo—, así que se lee de la página del giveaway: una petición, solo al abrir el diálogo. Si no se puede saber, la línea no aparece; no se inventa un cero.',
                 '• Ritmo humanizado: 2.5–5 s entre boletos y pausa de 10–20 s cada 10, con temporizador en Web Worker para que no se estiren con la pestaña en segundo plano.',
                 '• Se detiene solo si el servidor protesta (ritmo, baneo, sin respuesta) y ofrece Continuar cuando la causa es recuperable. La cola sobrevive a las recargas.',
+                '• Un giveaway que el servidor rechaza con el código [e260] ya no está disponible: la cola lo saca, oculta su tarjeta y sigue con el siguiente, en vez de pararse. Van a una categoría aparte, «No disponibles», que el widget cuenta y que no se puede deshacer —no hay nada en lo que entrar—; se vacía sola al recargar la página.',
                 '• Al hacer clic en el título de una tarjeta se encola, en vez de abrir el giveaway.',
                 '• Un clic en una fila del panel de la cola te lleva a su tarjeta en el listado y la resalta. Si no está en la página, o la tienes oculta, te lo dice.',
                 '▸ Widget de GalaSilver',
@@ -466,6 +473,7 @@
                 '• That dialog also tells you how many tickets you ALREADY hold in that giveaway, which is the figure the "buy more?" decision hangs on. The listing does not publish it —its «sold» is everyone\'s total, not yours— so it is read from the giveaway\'s own page: one request, only when the dialog opens. If it cannot be known, the line does not show up; it does not make up a zero.',
                 '• Humanized pacing: 2.5–5 s between tickets and a 10–20 s pause every 10, on a Web Worker timer so they are not stretched when the tab is in the background.',
                 '• Stops on its own if the server pushes back (rate limit, ban, no answer) and offers Continue when the cause is recoverable. The queue survives reloads.',
+                '• A giveaway the server turns down with code [e260] is no longer available: the queue drops it, hides its card and moves on to the next one instead of stopping. They go into a category of their own, "Unavailable", which the widget counts and which cannot be undone —there is nothing left to enter—; it empties itself when the page reloads.',
                 '• Clicking a card title queues it instead of opening the giveaway.',
                 '• Clicking a row of the queue panel takes you to its card in the listing and highlights it. If it is not on the page, or you have it hidden, it tells you.',
                 '▸ GalaSilver widget',
@@ -570,6 +578,19 @@
     // Cada entrada es { t, n }: cuando se oculto y el titulo con el que se vio,
     // para que el registro se pueda leer sin tener la tarjeta delante.
     const IGNORED_GAMES_KEY = 'ig-bulk-ignored-games';
+    // Giveaways que el servidor rechazo en la cola con UNAVAILABLE_JOIN_CODE.
+    // Cuarta categoria de ocultos y la unica que NO se guarda: vive en memoria y
+    // se vacia al recargar, a proposito. No es una decision del usuario (no hay
+    // ↺ ni "limpiar") ni un hecho que haya que recordar: el sorteo ya no admite
+    // entradas, y en cuanto el sitio lo retire del listado ya no hay nada que
+    // esconder. Si tras recargar sigue saliendo, la cola volvera a toparse con
+    // el y lo volvera a apartar sin pararse, que es lo que importa.
+    const unavailableGids = new Set();
+    // Codigo que acompaña al rechazo de un sorteo que ya no esta disponible. El
+    // sitio lo manda en `responseData.code` y lo pinta como "[e260]" en la caja
+    // de error de la tarjeta (handleJoinGiveawayOrAuction). Se decide por el
+    // codigo y no por el `status`, que es lo que el sitio no documenta.
+    const UNAVAILABLE_JOIN_CODE = 'e260';
 
     // Tope de GalaSilver y ritmo de acumulacion, segun la documentacion oficial:
     //   https://docs.indiegala.com/giveaways_auctions_trades/giveaways.html#how-can-i-achieve-and-gain-silver-coins-required-to-participate-in-a-giveaway
@@ -1191,16 +1212,29 @@
     }
 
     // Detecta si el card mostro un error (el sitio expone .card-error / .items-list-item-error)
+    //
+    // En el listado mira SOLO la tarjeta del trigger. Subir 8 padres, como hacia
+    // antes, llega hasta .page-contents-ajax-list y recoge las cajas de error de
+    // TODO el listado (comprobado en el sitio: 20 de 20). Y el sitio deja la
+    // caja de un join fallido a la vista ~5,8 s (fadeIn + slideDown + 5 s +
+    // slideUp + fadeOut, en handleJoinGiveawayOrAuction), mas que la pausa
+    // entre joins: un `duplicate` o `not_available` que la cola salta sin
+    // pararse paraba la corrida en el item SIGUIENTE con "Error detectado".
+    // Fuera del listado (la ficha, con un solo .card-join) se queda la
+    // busqueda de siempre.
     function isErrorVisible(triggerEl) {
         const candidates = [];
-        if (triggerEl) {
+        const ownItem = triggerEl && triggerEl.closest && triggerEl.closest('.items-list-item');
+        if (ownItem) {
+            ownItem.querySelectorAll('.items-list-item-error').forEach(e => candidates.push(e));
+        } else if (triggerEl) {
             let p = triggerEl.parentElement;
             for (let i = 0; i < 8 && p; i++) {
                 p.querySelectorAll && p.querySelectorAll('.card-error, .items-list-item-error').forEach(e => candidates.push(e));
                 p = p.parentElement;
             }
         }
-        if (!candidates.length) {
+        if (!candidates.length && !ownItem) {
             document.querySelectorAll('.card-error, .items-list-item-error').forEach(e => candidates.push(e));
         }
         for (const e of candidates) {
@@ -1312,6 +1346,20 @@
         renderQueuePanel();
         refreshQueueButtonsState();
         refreshBulkBadges();
+    }
+    function isUnavailableJoinCode(code) {
+        return typeof code === 'string' && code.trim().toLowerCase() === UNAVAILABLE_JOIN_CODE;
+    }
+    // Aparta un giveaway que el servidor dio por no disponible: fuera de la cola
+    // entero (las copias restantes de un Extra Odds tampoco entrarian) y su
+    // tarjeta a la categoria "no disponibles".
+    function markUnavailable(gid) {
+        const g = String(gid);
+        unavailableGids.add(g);
+        console.info('[IG-BulkTools] giveaway no disponible (' + UNAVAILABLE_JOIN_CODE + '), apartado:', g);
+        removeFromQueue(g);
+        try { applyIgnored(); } catch (e) { console.error('[IG-BulkTools] applyIgnored:', e); }
+        try { refreshIgnoredWidget(); } catch (e) { console.error('[IG-BulkTools] refreshIgnoredWidget:', e); }
     }
     function clearQueue() {
         queue = [];
@@ -1849,6 +1897,12 @@
                 margin: -4px 0 8px; line-height: 1.3;
             }
             #${BALANCE_WIDGET_ID} .ig-bw-loadall.ig-bw-short { color: #ffcf66; }
+            /* Cuenta de no disponibles (e260). Solo informa: sin boton, porque
+               no hay nada que devolver, y se va al recargar. */
+            #${BALANCE_WIDGET_ID} .ig-bw-unavailable {
+                font-size: 11px; color: #bbb;
+                margin: 0 0 8px; line-height: 1.3;
+            }
             #${BALANCE_WIDGET_ID} .ig-bw-credit {
                 font-size: 12px; color: #80d8ff;
                 font-weight: bold; margin-bottom: 8px;
@@ -1924,6 +1978,9 @@
             /* Ocultados a mano con ✕. Clase aparte de .ig-entered-hidden para que
                los dos filtros no se pisen: cada pasada pone y quita solo la suya. */
             .ig-ignored-hidden { display: none !important; }
+            /* No disponibles (e260): clase propia porque "Mostrar ocultos" no
+               los devuelve — no hay nada que deshacer en ellos. */
+            .ig-unavailable-hidden { display: none !important; }
             /* Con "Mostrar ocultos" activo el giveaway sigue visible pero apagado,
                para que se distinga de los que si cuentan. El hover lo devuelve a
                color: sin eso, el boton de restaurar se lee a medias. */
@@ -2593,6 +2650,7 @@
 
         let success = 0;        // joins ok totales en esta corrida
         let iteration = 0;       // tick global (para longPause cada N)
+        let unavailable = 0;     // apartados por e260 en esta corrida
         let stopCode = null;
         let silverHits = 0;      // 'silver' del server consecutivos (ver abajo)
 
@@ -2688,7 +2746,18 @@
                     const result = await joinPromise;
                     if (result.timedOut) { stopCode = 'timeout'; break; }
                     const st = result.status;
-                    if (st === 'ok') {
+                    // Sorteo que ya no esta disponible: se aparta y se sigue. Va
+                    // antes que las ramas por `status` porque lo que lo delata es
+                    // el codigo, venga con el status que venga; sin esto caia en
+                    // la rama de desconocidos y paraba la corrida entera por un
+                    // giveaway en el que ya no se puede entrar.
+                    // No hay `continue`: la peticion SI salio, asi que toca el
+                    // sleep del final del tick como a cualquier otro join.
+                    if (st !== 'ok' && isUnavailableJoinCode(result.code)) {
+                        unavailable++;
+                        markUnavailable(it.gid);
+                    }
+                    else if (st === 'ok') {
                         success++;
                         silverHits = 0;
                         // Dejar constancia para "ocultar ya participados": si el
@@ -2774,11 +2843,14 @@
             const waiting = queue.reduce(
                 (s, q) => s + (itemAffordable(q, balEnd) ? 0 : itemPending(q)), 0);
             const stopReason = stopReasonFromCode(stopCode);
-            const finalMsg = stopReason
+            // Los apartados por e260 ya no estan en la cola ni en el total: se
+            // dicen aparte, o el usuario ve desaparecer items sin motivo.
+            const unavailableMsg = unavailable > 0 ? fmt(T.queueDoneUnavailable, { u: unavailable }) : '';
+            const finalMsg = (stopReason
                 ? `${stopReason} (${success}/${finalTotal})`
                 : (waiting > 0
                     ? fmt(T.queueDoneSkipped, { ok: success, n: finalTotal, w: waiting })
-                    : fmt(T.queueDone, { ok: success, n: finalTotal }));
+                    : fmt(T.queueDone, { ok: success, n: finalTotal }))) + unavailableMsg;
 
             // Boton "Continuar": permitido si la causa es recuperable y aun
             // queda algun pendiente en la cola viva.
@@ -2943,7 +3015,8 @@
             .find(it => getItemGid(it) === String(gid));
         if (!item) { showToast(T.queueGotoMissing, 'info'); return; }
         const cell = item.closest('.items-list-col') || item;
-        if (cell.classList.contains('ig-ignored-hidden') || cell.classList.contains('ig-entered-hidden')) {
+        if (cell.classList.contains('ig-ignored-hidden') || cell.classList.contains('ig-entered-hidden')
+            || cell.classList.contains('ig-unavailable-hidden')) {
             showToast(T.queueGotoHidden, 'info');
             return;
         }
@@ -3538,6 +3611,7 @@
                         <span>${TX.langLabel}</span>
                         <select id="ig-bw-lang" style="margin-left:4px;">${langOptionsHtml}</select>
                     </label>
+                    <div class="ig-bw-unavailable" id="ig-bw-unavailable" style="display:none" title="${escapeHtml(T.widgetUnavailableTooltip)}"></div>
                     <button type="button" class="ig-bw-btn" id="ig-bw-check" title="${escapeHtml(T.widgetCheckBtnTooltip)}">${T.widgetCheckBtn}</button>
                     <button type="button" class="ig-bw-btn" id="ig-bw-clear-ignored" style="display:none" title="${escapeHtml(T.widgetClearIgnoredTooltip)}"></button>
                     <button type="button" class="ig-bw-btn" id="ig-bw-clear-ignored-games" style="display:none" title="${escapeHtml(T.widgetClearIgnoredGamesTooltip)}"></button>
@@ -5152,6 +5226,9 @@
 
             cell.classList.toggle('ig-ignored-hidden', ignored && !show);
             cell.classList.toggle('ig-ignored-shown', ignored && show);
+            // No disponibles: aparte de las dos de arriba y sin mirar `show`,
+            // porque "Mostrar ocultos" es para deshacer y aqui no hay que.
+            cell.classList.toggle('ig-unavailable-hidden', unavailableGids.has(gid));
         });
     }
 
@@ -5284,6 +5361,12 @@
         if (showRow) showRow.style.display = (n + ng) > 0 ? '' : 'none';
         const showChk = w.querySelector('#ig-bw-show-ignored');
         if (showChk) showChk.checked = !!settings.showIgnored;
+        const unav = w.querySelector('#ig-bw-unavailable');
+        if (unav) {
+            const nu = unavailableGids.size;
+            setIfChanged(unav, 'textContent', fmt(T.widgetUnavailable, { n: nu }));
+            setIfChanged(unav.style, 'display', nu > 0 ? '' : 'none');
+        }
     }
 
     function injectListing() {
